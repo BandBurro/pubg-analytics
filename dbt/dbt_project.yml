@@ -26,3 +26,15 @@ models:
     silver:
       +materialized: table
       +schema: silver
+    gold:
+      +materialized: table
+      +schema: gold
+
+seeds:
+  pubg:
+    +schema: seeds
+    weapon_class:
+      +column_types:
+        causer_name: varchar
+        weapon_name: varchar
+        weapon_class: varchar

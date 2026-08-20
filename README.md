@@ -152,6 +152,56 @@ An independent sanity check that the pipeline is sound: median engagement distan
 separates snipers (M24 130 m, Kar98k 133 m) from shotguns (Winchester 7 m) and SMGs
 (15 m) without being told what any weapon is.
 
+## Gold layer results
+
+### Weapon classes recover themselves from the data
+
+`weapon_class` comes from a curated seed — asset names don't reveal whether a gun
+is a DMR. But engagement distance was never told what any weapon is, and it
+reproduces weapon roles exactly:
+
+| Class | HvH kills | Median | p90 |
+|---|---|---|---|
+| shotgun | 5,533 | 7 m | 15 m |
+| smg | 12,228 | 13 m | 43 m |
+| assault_rifle | 28,305 | 20 m | 57 m |
+| lmg | 15,531 | 25 m | 77 m |
+| dmr | 6,327 | 106 m | 229 m |
+| sniper_rifle | 6,984 | 131 m | 262 m |
+
+Perfectly monotonic. Seed coverage is 99.6% of firearm kills; the 591 unclassified
+kills sit at 127 m median, which suggests they are sniper-class.
+
+### Drop choice is worth ~40% of your expected finish
+
+Erangel, 500 m grid cells, analytical matches, humans only, min 80 drops
+(`avg_finish_pct`: 0.0 = won, 1.0 = last among humans).
+
+| | Cell | Drops | Avg finish | Avg human kills | Avg survival |
+|---|---|---|---|---|---|
+| deadliest | 9_12 | 558 | 0.206 | 1.05 | 589 s |
+| deadliest | 8_12 | 678 | 0.205 | 1.08 | 633 s |
+| safest | 4_4 | 146 | 0.118 | 1.08 | 1,021 s |
+| safest | 3_4 | 423 | 0.117 | 0.88 | 955 s |
+
+The deadliest cells are also among the most popular — the hot-drop pattern. Note
+`avg_human_kills` is ~1.0 in **both** groups: hot drops don't get you more kills,
+they just get you killed sooner. Survival time nearly doubles between them.
+
+### The match arc, recovered
+
+| Phase | Alive | Zone radius | Deaths/min | Median engagement |
+|---|---|---|---|---|
+| 1 | 83 | 5,290 m | **5.19** | 17 m |
+| 2 | 45 | 1,819 m | 2.82 | 31 m |
+| 4 | 29 | 617 m | 3.16 | 41 m |
+| 6 | 13 | 241 m | 2.39 | 49 m |
+| 9 | 5 | 73 m | **8.88** | 34 m |
+
+A U-shaped violence curve: the landing bloodbath, a quieter mid-game, then the
+final circle at nearly double phase 1's death rate. Engagement distance rises as
+the game opens up, then collapses as the circle squeezes players together.
+
 ## Roadmap
 
 | Phase | What |
@@ -160,8 +210,8 @@ separates snipers (M24 130 m, Kar98k 133 m) from shotguns (Winchester 7 m) and S
 | 1.5 | Lift the collector to AWS Lambda + EventBridge + S3, via Terraform |
 | 2 | Bronze → typed Parquet: 8 tables, 1.53M rows ✅ |
 | 2.5 | Silver in dbt: 8 models, 35 tests, dedup + integrity flags ✅ |
-| 3 | **Gold: dims, facts, phase grain** ← you are here |
-| 4 | Skill ratings — OpenSkill Plackett-Luce over 1–100 placements |
+| 3 | Gold: 3 dims, 3 facts, 91 dbt nodes ✅ |
+| 4 | **Skill ratings — OpenSkill Plackett-Luce** ← you are here |
 | 5 | Win/placement prediction + calibration harness |
 | 6 | Balance marts: weapon matchups, drop-spot survival, patch-over-patch |
 | 6.5 | Estimator study against synthetic ground truth |

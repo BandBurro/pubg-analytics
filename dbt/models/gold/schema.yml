@@ -1,0 +1,125 @@
+version: 2
+
+models:
+  - name: dim_map
+    columns:
+      - name: map_sk
+        tests: [unique, not_null]
+      - name: map_name
+        tests: [unique, not_null]
+      - name: is_training_map
+        tests: [not_null]
+
+  - name: dim_weapon
+    description: Every damage causer. weapon_class comes from a curated seed;
+      unmatched firearms are 'unclassified' rather than guessed.
+    columns:
+      - name: weapon_sk
+        tests: [unique, not_null]
+      - name: causer_name
+        tests: [unique, not_null]
+      - name: damage_source
+        tests:
+          - not_null
+          - accepted_values:
+              values: [weapon, throwable, vehicle, fists, fire, blue_zone, launcher, unknown]
+
+  - name: dim_player
+    columns:
+      - name: player_sk
+        tests: [unique, not_null]
+      - name: account_id
+        tests: [unique, not_null]
+      - name: matches_played
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+
+  - name: fact_player_match
+    description: One row per player per match. The rating engine's input.
+    columns:
+      - name: player_match_sk
+        tests: [unique, not_null]
+      - name: match_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('slv_match')
+              field: match_id
+      - name: player_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_player')
+              field: player_sk
+      - name: map_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_map')
+              field: map_sk
+      - name: human_placement_pct
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+      - name: human_kills
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      # Bot kills are derived as reported minus human; if PUBG's own count ever
+      # disagreed with the telemetry this would go negative and we'd want to know.
+      - name: bot_kills
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+  - name: fact_kill
+    description: One row per death, enriched with zone phase and lobby state.
+    columns:
+      - name: kill_sk
+        tests: [unique, not_null]
+      - name: map_sk
+        tests:
+          - relationships:
+              to: ref('dim_map')
+              field: map_sk
+      - name: weapon_sk
+        tests:
+          - relationships:
+              to: ref('dim_weapon')
+              field: weapon_sk
+      - name: range_bucket
+        tests:
+          - accepted_values:
+              values: ['0-10m', '10-50m', '50-100m', '100-200m', '200-400m', '400m+']
+
+  - name: fact_match_phase
+    description: One row per match per zone phase — the round-equivalent grain.
+    columns:
+      - name: match_phase_sk
+        tests: [unique, not_null]
+      - name: phase
+        tests: [not_null]
+      - name: deaths
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+seeds:
+  - name: weapon_class
+    columns:
+      - name: causer_name
+        tests: [unique, not_null]
+      - name: weapon_class
+        tests:
+          - accepted_values:
+              values: [assault_rifle, smg, dmr, sniper_rifle, lmg, shotgun,
+                       pistol, bow, melee, throwable, launcher]

@@ -1,0 +1,65 @@
+causer_name,weapon_name,weapon_class
+WeapAK47_C,AKM,assault_rifle
+WeapHK416_C,M416,assault_rifle
+WeapSCAR-L_C,SCAR-L,assault_rifle
+WeapM16A4_C,M16A4,assault_rifle
+WeapGroza_C,Groza,assault_rifle
+WeapQBZ95_C,QBZ95,assault_rifle
+WeapBerylM762_C,Beryl M762,assault_rifle
+WeapMk47Mutant_C,Mk47 Mutant,assault_rifle
+WeapG36C_C,G36C,assault_rifle
+WeapK2_C,K2,assault_rifle
+WeapACE32_C,ACE32,assault_rifle
+WeapFamasG2_C,FAMAS,assault_rifle
+WeapAUG_C,AUG A3,assault_rifle
+WeapUZI_C,Micro UZI,smg
+WeapUMP_C,UMP45,smg
+WeapThompson_C,Tommy Gun,smg
+WeapVector_C,Vector,smg
+WeapP90_C,P90,smg
+WeapMP5K_C,MP5K,smg
+WeapJS9_C,JS9,smg
+Weapvz61Skorpion_C,Skorpion,smg
+WeapBizonPP19_C,PP-19 Bizon,smg
+WeapMini14_C,Mini 14,dmr
+WeapSKS_C,SKS,dmr
+WeapMk14_C,Mk14 EBR,dmr
+WeapVSS_C,VSS,dmr
+WeapDragunov_C,Dragunov,dmr
+WeapMk12_C,Mk12,dmr
+WeapFNFal_C,SLR,dmr
+WeapQBU88_C,QBU88,dmr
+WeapKar98k_C,Kar98k,sniper_rifle
+WeapM24_C,M24,sniper_rifle
+WeapAWM_C,AWM,sniper_rifle
+WeapWin94_C,Win94,sniper_rifle
+WeapMosinNagant_C,Mosin Nagant,sniper_rifle
+WeapM249_C,M249,lmg
+WeapDP28_C,DP-28,lmg
+WeapMG3_C,MG3,lmg
+WeapRPD_C,RPD,lmg
+WeapBerreta686_C,S686,shotgun
+WeapSaiga12_C,S12K,shotgun
+WeapWinchester_C,S1897,shotgun
+WeapDP12_C,DBS,shotgun
+WeapSawnoff_C,Sawed-off,shotgun
+WeapM9_C,P92,pistol
+WeapG18_C,P18C,pistol
+WeapDesertEagle_C,Deagle,pistol
+WeapNagantM1895_C,R1895,pistol
+WeapM1911_C,P1911,pistol
+WeapRhino_C,R45,pistol
+WeapCrossbow_1_C,Crossbow,bow
+WeapPan_C,Pan,melee
+WeapPanProjectile_C,Pan (thrown),melee
+WeapMachete_C,Machete,melee
+WeapMacheteProjectile_C,Machete (thrown),melee
+WeapSickle_C,Sickle,melee
+WeapSickleProjectile_C,Sickle (thrown),melee
+WeapCrowbar_C,Crowbar,melee
+ProjGrenade_C,Frag Grenade,throwable
+ProjC4_C,C4,throwable
+ProjMolotov_C,Molotov,throwable
+BP_MolotovFireDebuff_C,Molotov (fire),throwable
+PanzerFaust100M_Projectile_C,Panzerfaust,launcher
+Mortar_Projectile_C,Mortar,launcher

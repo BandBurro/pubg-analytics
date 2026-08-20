@@ -31,12 +31,17 @@ select
         when 'Kiki_Main'       then 'Deston'
         when 'Range_Main'      then 'Camp Jackal'
         when 'Heaven_Main'     then 'Haven'
+        when 'Italy_TDM_Main'  then 'Team Deathmatch (Italy)'
     end                                     as map_display_name,
 
     -- Camp Jackal is the training range, not a competitive map. Its matches
     -- average ~560s against ~1700s elsewhere, which is why it needs excluding
     -- from anything about real play.
     map_name = 'Range_Main'                 as is_training_map,
+
+    -- Team Deathmatch arenas are a different game: respawns, no zone, no
+    -- placement. Nothing about battle-royale survival transfers to them.
+    map_name like '%TDM%'                   as is_deathmatch_arena,
 
     match_count,
     avg_duration_s,

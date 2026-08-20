@@ -11,7 +11,11 @@ models:
       - name: match_type
         tests:
           - accepted_values:
-              values: [official, competitive, airoyale, tutorialatoz, trainingroom]
+              # arcade/tdm is Team Deathmatch — respawn-based, not battle royale,
+              # which is why players can die more than once in one match.
+              # event/ibr is Intense Battle Royale: 15-20 players, short, all human.
+              values: [official, competitive, airoyale, tutorialatoz,
+                       trainingroom, event, arcade, custom]
       - name: perspective
         tests:
           - accepted_values:

@@ -110,6 +110,26 @@ class PubgClient:
         rels = payload.get("data", {}).get("relationships", {})
         return [m["id"] for m in rels.get("matches", {}).get("data", [])]
 
+    async def get_players_matches(self, account_ids: list[str]) -> dict[str, list[str]]:
+        """Match history for up to 10 accounts in one metered call.
+
+        This is the endpoint that makes skill rating possible. /samples returns
+        random matches across the whole player base, so the same player almost
+        never recurs and ratings never leave their prior. Fetching *players\'*
+        histories instead produces the repeated observations a rating system needs.
+        """
+        if len(account_ids) > 10:
+            raise ValueError("the API accepts at most 10 player ids per request")
+        ids = ",".join(account_ids)
+        url = f"{self.base_url}/players?filter[playerIds]={ids}"
+        resp = await self._get(url, metered=True)
+        payload = orjson.loads(resp.content)
+        out: dict[str, list[str]] = {}
+        for item in payload.get("data", []) or []:
+            rel = item.get("relationships", {}).get("matches", {}).get("data") or []
+            out[item["id"]] = [m["id"] for m in rel]
+        return out
+
     async def get_match(self, match_id: str) -> dict:
         """Match detail: rosters, participants, and the telemetry asset link."""
         resp = await self._get(f"{self.base_url}/matches/{match_id}", metered=False)

@@ -225,6 +225,119 @@ def shred(
         typer.echo(f"skipped {skipped} match(es)")
 
 
+async def _cohort(limit: int, min_matches: int) -> None:
+    """Expand collection along players rather than random matches."""
+    import duckdb
+
+    key = settings.require_key()
+    wh = settings.data_dir / "warehouse.duckdb"
+    if not wh.exists():
+        raise SystemExit(f"no warehouse at {wh} — run `just build` first")
+
+    con = duckdb.connect(str(wh), read_only=True)
+    seeds = [
+        r[0]
+        for r in con.execute(
+            """
+            select account_id
+            from main_gold.dim_player
+            where not is_bot and analytical_matches >= ?
+            order by analytical_matches desc, career_kills desc
+            limit ?
+            """,
+            [min_matches, limit],
+        ).fetchall()
+    ]
+    con.close()
+
+    if not seeds:
+        typer.echo("no seed players found")
+        return
+    typer.echo(f"expanding {len(seeds):,} seed players in batches of 10...")
+
+    found: dict[str, list[str]] = {}
+    try:
+        async with PubgClient(
+            api_key=key,
+            base_url=settings.base_url,
+            rpm=settings.rpm,
+            concurrency=settings.concurrency,
+        ) as client:
+            for start in range(0, len(seeds), 10):
+                batch = seeds[start : start + 10]
+                try:
+                    found.update(await client.get_players_matches(batch))
+                except MatchGone:
+                    # Accounts can vanish (bans, renames). Not fatal.
+                    continue
+                done = min(start + 10, len(seeds))
+                typer.echo(f"  {done}/{len(seeds)} players, {len(found)} resolved")
+    except httpx.TransportError as exc:
+        _explain_transport_error(exc)
+        raise typer.Exit(code=1) from None
+
+    match_ids = sorted({m for ms in found.values() for m in ms})
+    with Ledger(settings.ledger_path) as ledger:
+        new = ledger.add_discovered(match_ids)
+    per = len(match_ids) / len(found) if found else 0
+    typer.echo(
+        f"{len(found):,} players -> {len(match_ids):,} distinct matches "
+        f"({per:.1f}/player), {new:,} new"
+    )
+    typer.echo("run `just fetch` to download them")
+
+
+@app.command()
+def cohort(
+    limit: int = typer.Option(200, help="How many seed players to expand."),
+    min_matches: int = typer.Option(2, help="Only seed players with at least this many."),
+) -> None:
+    """Discover matches by player history instead of random sampling.
+
+    /samples gives breadth: random matches, almost no repeated players, so skill
+    ratings never converge. This gives depth — the repeated observations a rating
+    system actually needs.
+    """
+    asyncio.run(_cohort(limit, min_matches))
+
+
+@app.command()
+def rate() -> None:
+    """Run the skill-rating engine over the warehouse and emit rating updates."""
+    import duckdb
+
+    from .ratings import group_matches, run_ratings, write_updates
+
+    wh = settings.data_dir / "warehouse.duckdb"
+    if not wh.exists():
+        raise SystemExit(f"no warehouse at {wh} — run `just build` first")
+
+    con = duckdb.connect(str(wh), read_only=True)
+    from .ratings import RATING_QUERY
+
+    cols = [d[0] for d in con.execute(RATING_QUERY).description]
+    rows = [dict(zip(cols, r, strict=True)) for r in con.execute(RATING_QUERY).fetchall()]
+    con.close()
+    typer.echo(f"rating over {len(rows):,} player-match rows...")
+
+    groups = group_matches(rows)
+    updates = run_ratings(groups)
+    if not updates:
+        typer.echo("no rateable matches (need 2+ human teams per match)")
+        return
+
+    path = write_updates(updates, settings.data_dir / "ratings")
+    rated = len({u["account_id"] for u in updates})
+    repeat = len(
+        {u["account_id"] for u in updates if u["games_played_before"] > 0}
+    )
+    typer.echo(f"  matches grouped   : {len(groups):,}")
+    typer.echo(f"  rating updates    : {len(updates):,}")
+    typer.echo(f"  players rated     : {rated:,}")
+    typer.echo(f"  with prior history: {repeat:,}")
+    typer.echo(f"  wrote {path}")
+
+
 @app.command()
 def status() -> None:
     """Summarise the collection ledger."""

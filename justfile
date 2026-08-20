@@ -29,6 +29,18 @@ shred limit="0" batch="250":
 build:
     cd dbt && uv run dbt build --profiles-dir .
 
+# Full pipeline: warehouse -> ratings -> rating models.
+# The rating engine sits between two dbt runs: it reads fact_player_match and
+# writes a table that dbt then models.
+pipeline:
+    cd dbt && uv run dbt build --profiles-dir . --exclude tag:ratings
+    uv run pubg rate
+    cd dbt && uv run dbt build --profiles-dir .
+
+# Run the skill-rating engine.
+rate:
+    uv run pubg rate
+
 # Run only the dbt tests.
 dbt-test:
     cd dbt && uv run dbt test --profiles-dir .
@@ -74,3 +86,7 @@ logs:
 
 logs-err:
     @tail -n 30 data/logs/collect.err.log 2>/dev/null || echo "no errors logged"
+
+# Expand collection along player histories (what ratings need).
+cohort limit="200":
+    uv run pubg cohort --limit {{limit}}

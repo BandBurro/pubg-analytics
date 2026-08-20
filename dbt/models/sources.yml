@@ -17,3 +17,12 @@ sources:
       - name: landing
       - name: phase
       - name: game_state
+
+  - name: ratings
+    description: >
+      Output of the Python rating engine (`pubg rate`). Computed outside dbt
+      because a rating system is a sequential fold, not a set operation.
+    meta:
+      external_location: "read_parquet('../data/ratings/{name}.parquet')"
+    tables:
+      - name: fact_rating_update

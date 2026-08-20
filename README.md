@@ -202,6 +202,55 @@ A U-shaped violence curve: the landing bloodbath, a quieter mid-game, then the
 final circle at nearly double phase 1's death rate. Engagement distance rises as
 the game opens up, then collapses as the circle squeezes players together.
 
+## Phase 4: the rating engine, and why sampling strategy decides everything
+
+The engine is Plackett-Luce over human-relative team placements, run as a
+sequential fold in Python rather than SQL — match N's update depends on the state
+match N-1 left behind. It emits `fact_rating_update` with pre- and post-state per
+player per match, which is what makes point-in-time correctness *enforceable*:
+`ordinal_pre` is the only rating a model may use to predict that match.
+
+A dbt test asserts the chain directly — a player's `mu_pre` must equal their
+previous `mu_post`. If that ever drifts, every feature built on it is leaking the
+future into the past.
+
+### The engine works. The data couldn't feed it.
+
+The real corpus can't validate a rating system: **no player had more than 4
+matches in it**, so every rating sat on its prior. So the engine is validated
+against a synthetic population with skill we chose, measuring how well it recovers
+an ordering it was never told:
+
+| Matches per player | Spearman ρ vs true skill |
+|---|---|
+| 17 | 0.780 |
+| 33 | 0.850 |
+| 133 | **0.967** |
+| 400 | 0.974 |
+
+**A usable rating needs ~30 matches per player**, with diminishing returns past
+~130. The `/samples` corpus provided **1.02**. Of 83,596 rated players, zero
+converged; average sigma moved from 8.333 to 8.32.
+
+That is not an engine problem. It is a sampling problem, and it was invisible
+until the rating engine existed to expose it.
+
+### The fix: collect along players, not matches
+
+`/samples` optimises for breadth — random matches across the whole player base, so
+the same player essentially never recurs. Skill rating needs depth. The `/players`
+endpoint returns a player's own match history, 10 accounts per request:
+
+| Strategy | Per API call | Repeated players |
+|---|---|---|
+| `/samples` | ~900 random matches | almost none |
+| `/players` (`just cohort`) | ~5,350 matches for 10 known players | **~535 each** |
+
+Fifty seed players expanded to **26,761 distinct matches — 535 per player** in five
+API calls. That is well past the convergence threshold. Breadth and depth are both
+useful, so both collectors are kept: `just collect` for map and mode coverage,
+`just cohort` for rating depth.
+
 ## Roadmap
 
 | Phase | What |
@@ -211,8 +260,8 @@ the game opens up, then collapses as the circle squeezes players together.
 | 2 | Bronze → typed Parquet: 8 tables, 1.53M rows ✅ |
 | 2.5 | Silver in dbt: 8 models, 35 tests, dedup + integrity flags ✅ |
 | 3 | Gold: 3 dims, 3 facts, 91 dbt nodes ✅ |
-| 4 | **Skill ratings — OpenSkill Plackett-Luce** ← you are here |
-| 5 | Win/placement prediction + calibration harness |
+| 4 | Ratings: Plackett-Luce fold, PIT-tested, + player-cohort collector ✅ |
+| 5 | **Placement prediction + calibration harness** ← you are here |
 | 6 | Balance marts: weapon matchups, drop-spot survival, patch-over-patch |
 | 6.5 | Estimator study against synthetic ground truth |
 | 7 | Scale out: S3 + Delta/Iceberg + Spark for the position layer (~750M rows at 100k matches) |

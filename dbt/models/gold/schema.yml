@@ -123,3 +123,37 @@ seeds:
           - accepted_values:
               values: [assault_rifle, smg, dmr, sniper_rifle, lmg, shotgun,
                        pistol, bow, melee, throwable, launcher]
+
+  - name: fact_rating_update
+    description: One row per rated player per match. pre-state is feature-safe,
+      post-state is not.
+    columns:
+      - name: rating_update_sk
+        tests: [unique, not_null]
+      - name: account_id
+        tests: [not_null]
+      - name: ordinal_pre
+        tests: [not_null]
+      - name: games_played_before
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: team_rank
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+
+  - name: dim_player_rating
+    description: Latest rating per player. A convenience view over history — never
+      the source of truth for what a rating was at a past moment.
+    columns:
+      - name: player_sk
+        tests: [unique, not_null]
+      - name: games_rated
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true

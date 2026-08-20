@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Typed Parquet shredded from raw telemetry. Faithful to the source: still
+      contains bots, tutorial matches and duplicate event emissions. Silver is
+      where those get handled, visibly.
+    meta:
+      external_location: "read_parquet('../data/bronze/{name}/*.parquet', union_by_name=true)"
+    tables:
+      - name: match
+      - name: match_player
+      - name: roster
+      - name: kill
+      - name: kill_participant
+      - name: landing
+      - name: phase
+      - name: game_state

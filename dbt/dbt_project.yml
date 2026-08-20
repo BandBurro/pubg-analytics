@@ -1,0 +1,28 @@
+name: pubg
+version: "0.1.0"
+config-version: 2
+
+profile: pubg
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # A match is only analytically usable if it's a real competitive game.
+  # ~38% of collected matches are AI Royale, tutorials or the training room.
+  analytical_match_types: ["official", "competitive"]
+  # Below this many seconds a match was aborted, not played.
+  min_match_duration_s: 300
+  # Lobbies with almost no humans tell us nothing about human play.
+  min_human_count: 10
+  # PUBG reports positions in centimetres.
+  cm_per_m: 100.0
+
+models:
+  pubg:
+    silver:
+      +materialized: table
+      +schema: silver

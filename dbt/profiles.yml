@@ -1,0 +1,10 @@
+# No secrets here — paths only, so it's safe to commit.
+pubg:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "../data/warehouse.duckdb"
+      threads: 8
+      extensions:
+        - parquet

@@ -1,0 +1,33 @@
+# Secrets — never commit. The glob catches editor backups like .env.save,
+# which nano leaves behind and which contain the real key.
+.env
+.env.*
+!.env.example
+*.pem
+.aws/
+
+# Collected data — unbackfillable, but far too large for git
+data/
+*.duckdb
+*.duckdb.wal
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# dbt build artifacts (package-lock.yml IS committed — it pins package versions)
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml

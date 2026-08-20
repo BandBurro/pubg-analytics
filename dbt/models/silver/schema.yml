@@ -1,0 +1,131 @@
+version: 2
+
+models:
+  - name: slv_match
+    description: One row per match, typed, with integrity flags attached not applied.
+    columns:
+      - name: match_id
+        tests: [unique, not_null]
+      - name: match_start_ts
+        tests: [not_null]
+      - name: match_type
+        tests:
+          - accepted_values:
+              values: [official, competitive, airoyale, tutorialatoz, trainingroom]
+      - name: perspective
+        tests:
+          - accepted_values:
+              values: [fpp, tpp]
+      - name: is_analytical
+        tests: [not_null]
+      - name: bot_share
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+  - name: slv_match_player
+    description: One row per participant per match, with human-relative placement.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [match_id, participant_id]
+    columns:
+      - name: match_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('slv_match')
+              field: match_id
+      - name: account_id
+        tests: [not_null]
+      - name: is_bot
+        tests: [not_null]
+      - name: human_placement_pct
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+  - name: slv_roster
+    columns:
+      - name: roster_id
+        tests: [unique, not_null]
+      - name: match_id
+        tests:
+          - relationships:
+              to: ref('slv_match')
+              field: match_id
+
+  - name: slv_kill
+    description: One row per death. Surrogate key includes the timestamp because
+      attack_id is -1 on environmental deaths and players can die twice in
+      tutorial modes.
+    columns:
+      - name: kill_sk
+        tests: [unique, not_null]
+      - name: match_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('slv_match')
+              field: match_id
+      - name: victim_account_id
+        tests: [not_null]
+      - name: death_cause
+        tests:
+          - accepted_values:
+              values: [player, environment, suicide, self, team_kill]
+      - name: is_human_vs_human
+        tests: [not_null]
+
+  - name: slv_kill_participant
+    description: Bridge of (death, player, role). Deduped on the timestamped key.
+    tests:
+      # This is the assertion that the dedup actually worked.
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [kill_sk, role, account_id]
+    columns:
+      - name: kill_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('slv_kill')
+              field: kill_sk
+      - name: role
+        tests:
+          - not_null
+          - accepted_values:
+              values: [victim, killer, finisher, dbno_maker, assist]
+
+  - name: slv_landing
+    description: Drop locations. 22% of raw rows were duplicate emissions.
+    tests:
+      # The headline dedup assertion.
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [match_id, account_id, event_ts]
+    columns:
+      - name: match_id
+        tests:
+          - relationships:
+              to: ref('slv_match')
+              field: match_id
+      - name: landing_seq
+        tests: [not_null]
+
+  - name: slv_phase
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [match_id, event_ts, phase]
+    columns:
+      - name: phase
+        tests: [not_null]
+
+  - name: slv_game_state
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [match_id, event_ts]
+    columns:
+      - name: num_alive_players
+        tests: [not_null]

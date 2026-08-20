@@ -73,6 +73,9 @@ select
 
     -- Weapon and geometry
     k.killer_weapon,
+    -- What the victim was holding when they died. Present on 95.8% of
+    -- human-vs-human kills, which is what makes an engagement matrix possible.
+    k.victim_weapon,
     k.killer_damage_reason,
     k.killer_distance_m,
     k.killer_through_wall,

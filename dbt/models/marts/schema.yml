@@ -1,0 +1,69 @@
+version: 2
+
+models:
+  - name: mart_weapon_performance
+    description: Weapon x perspective x range. Analytical matches, human victims
+      only — the naive version of this table ranks the MP5K first, which is an
+      artefact of tutorial lobbies.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [weapon_name, perspective, range_bucket]
+    columns:
+      - name: kills
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 1, inclusive: true}
+      - name: kill_share
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+
+  - name: mart_engagement_matrix
+    description: Directed weapon-class matchups with symmetric win rates and
+      empirical-Bayes shrinkage. Only shrunk_win_rate should be ranked.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [class_a, class_b, range_bucket]
+    columns:
+      - name: fights
+        tests: [not_null]
+      - name: raw_win_rate
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+      - name: shrunk_win_rate
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+      - name: is_mirror
+        tests: [not_null]
+      - name: has_symmetric_observation
+        tests: [not_null]
+
+  - name: mart_drop_zone
+    description: Map x landing grid cell survival outcomes.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [map_name, grid_cell]
+    columns:
+      - name: drops
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 1, inclusive: true}
+      - name: avg_finish_pct
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+      - name: avg_contest_level
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, inclusive: true}
+
+  - name: mart_zone_luck
+    description: Placement outcome by how far the drop point sat from the first
+      circle, in radii. An association, not a causal estimate — players see the
+      circle before they drop.
+    columns:
+      - name: zone_luck_bucket
+        tests: [unique, not_null]
+      - name: player_matches
+        tests: [not_null]
+      - name: avg_finish_pct
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}

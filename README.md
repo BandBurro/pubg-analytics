@@ -251,6 +251,72 @@ API calls. That is well past the convergence threshold. Breadth and depth are bo
 useful, so both collectors are kept: `just collect` for map and mode coverage,
 `just cohort` for rating depth.
 
+## Phase 6: balance marts
+
+Four marts, all restricted to analytical matches with human victims.
+
+### Weapon dominance reverses with range
+
+`mart_engagement_matrix` pairs the killer's weapon class against what the victim
+was holding, in both directions, with empirical-Bayes shrinkage toward 0.5.
+
+| Matchup | 0–10 m | 10–50 m | 50–100 m | 100–200 m |
+|---|---|---|---|---|
+| AR vs sniper | — | **0.70** | 0.27 | — |
+| AR vs DMR | **0.69** | 0.66 | 0.27 | — |
+| shotgun vs AR | **0.63** | — | — | — |
+| sniper vs LMG | — | — | 0.65 | **0.82** |
+
+Assault rifles beat snipers 70% of the time inside 50 m and lose 73% of the time
+past it. The reversal is clean, symmetric, and was never encoded anywhere — it
+falls out of 250,997 observed engagements.
+
+### The trap that nearly produced a fake finding
+
+The first version of this mart reported **throwables beating assault rifles at a
+raw win rate of exactly 1.000 across 2,343 fights**. That is not a matchup result.
+`victim_weapon` is what the victim was *holding when they died*, and nobody dies
+holding a grenade — so throwables appear as killer constantly and as victim never.
+
+A win rate of exactly 1.0 over thousands of trials is the tell. Real matchups
+don't go undefeated.
+
+The fix is `has_symmetric_observation`: both classes must be seen on both sides at
+least 100 times. The funnel is worth stating plainly:
+
+| Filter | Cells |
+|---|---|
+| All cells | 343 |
+| ≥200 fights | 120 |
+| **Interpretable (symmetric)** | **58** |
+
+**Half the cells that pass a naive sample-size check are still meaningless.** Row
+count is not evidence.
+
+### Zone luck is worth almost nothing
+
+Placement by how far the drop point sat from the *second* circle, in radii.
+(Phase 1's circle averages 5,485 m on an 8 km map — everyone is inside it, so the
+first circle can't measure luck at all.)
+
+| Drop position | Player-matches | Avg finish | Avg survival | Distance travelled |
+|---|---|---|---|---|
+| deep inside | 20,963 | 0.1950 | 644 s | 1,996 m |
+| inside | 49,384 | 0.1953 | 642 s | 2,200 m |
+| just outside | 46,004 | 0.1940 | 682 s | 2,707 m |
+| one radius out | 28,651 | 0.1968 | 739 s | 3,336 m |
+| far outside | 22,832 | 0.2033 | 784 s | 4,044 m |
+
+Landing far outside the circle costs about **0.8 percentage points** of finishing
+position — while doubling the distance you travel. Players forced to rotate
+actually *survive longer* (784 s vs 644 s), presumably by avoiding fights, and
+still finish about the same.
+
+So the circle draw is close to fair. Given how much players blame it, that is the
+more interesting answer than a large effect would have been. Caveat: drop choice
+isn't independent of the circle, since players see it before they jump — this
+bounds the effect rather than isolating it.
+
 ## Roadmap
 
 | Phase | What |
@@ -261,8 +327,8 @@ useful, so both collectors are kept: `just collect` for map and mode coverage,
 | 2.5 | Silver in dbt: 8 models, 35 tests, dedup + integrity flags ✅ |
 | 3 | Gold: 3 dims, 3 facts, 91 dbt nodes ✅ |
 | 4 | Ratings: Plackett-Luce fold, PIT-tested, + player-cohort collector ✅ |
-| 5 | **Placement prediction + calibration harness** ← you are here |
-| 6 | Balance marts: weapon matchups, drop-spot survival, patch-over-patch |
+| 5 | **Placement prediction + calibration harness** ← next |
+| 6 | Balance marts: engagement matrix, drop zones, zone luck ✅ |
 | 6.5 | Estimator study against synthetic ground truth |
 | 7 | Scale out: S3 + Delta/Iceberg + Spark for the position layer (~750M rows at 100k matches) |
 | 7.5 | Deliberately induce skew and fix it — where distributed intuition comes from |

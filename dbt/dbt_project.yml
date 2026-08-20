@@ -29,6 +29,9 @@ models:
     gold:
       +materialized: table
       +schema: gold
+    marts:
+      +materialized: table
+      +schema: marts
 
 seeds:
   pubg:

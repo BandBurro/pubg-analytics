@@ -58,7 +58,10 @@ select
     nullif(killer_damage_category, '')              as killer_damage_category,
     nullif(finish_damage_causer, '')                as finish_weapon,
     nullif(finish_damage_category, '')              as finish_damage_category,
-    nullif(victim_weapon, '')                       as victim_weapon,
+    -- The victim's weapon arrives with an engine instance suffix
+    -- (WeapRPD_C_7) while killer_damage_causer does not (WeapRPD_C). Left
+    -- as-is, not one of 150,040 victim weapons joins to the weapon dimension.
+    nullif(regexp_replace(victim_weapon, '_[0-9]+$', ''), '') as victim_weapon,
     case
         when killer_distance is null or killer_distance < 0 then null
         else killer_distance / {{ var('cm_per_m') }}

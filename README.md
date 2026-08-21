@@ -172,21 +172,23 @@ reproduces weapon roles exactly:
 Perfectly monotonic. Seed coverage is 99.6% of firearm kills; the 591 unclassified
 kills sit at 127 m median, which suggests they are sniper-class.
 
-### Drop choice is worth ~40% of your expected finish
+### Drop choice moves expected finish by ~26 percentile points
 
-Erangel, 500 m grid cells, analytical matches, humans only, min 80 drops
-(`avg_finish_pct`: 0.0 = won, 1.0 = last among humans).
+Erangel, squad only, 500 m grid cells, humans in analytical matches, min 80 drops.
+`avg_finish` is percentile among human teams: 0.0 = won, 1.0 = last.
 
 | | Cell | Drops | Avg finish | Avg human kills | Avg survival |
 |---|---|---|---|---|---|
-| deadliest | 9_12 | 558 | 0.206 | 1.05 | 589 s |
-| deadliest | 8_12 | 678 | 0.205 | 1.08 | 633 s |
-| safest | 4_4 | 146 | 0.118 | 1.08 | 1,021 s |
-| safest | 3_4 | 423 | 0.117 | 0.88 | 955 s |
+| deadliest | 6_6 | 1,515 | **0.602** | 1.00 | 600 s |
+| deadliest | 12_9 | 1,085 | 0.585 | 1.13 | 560 s |
+| safest | 4_9 | 87 | 0.351 | 0.49 | 1,020 s |
+| safest | 11_2 | 264 | **0.345** | 0.94 | 1,065 s |
 
-The deadliest cells are also among the most popular — the hot-drop pattern. Note
-`avg_human_kills` is ~1.0 in **both** groups: hot drops don't get you more kills,
-they just get you killed sooner. Survival time nearly doubles between them.
+The deadliest cells are also the most popular — the hot-drop pattern. Kills are
+~1.0 in **both** groups, so hot drops don't earn you more kills; they just end your
+match sooner. Survival time is 77% longer in the safe cells.
+
+Squad-only on purpose: placement percentile is only comparable within a team mode.
 
 ### The match arc, recovered
 
@@ -293,29 +295,27 @@ least 100 times. The funnel is worth stating plainly:
 **Half the cells that pass a naive sample-size check are still meaningless.** Row
 count is not evidence.
 
-### Zone luck is worth almost nothing
+### Zone luck: small, and pointing the other way
 
 Placement by how far the drop point sat from the *second* circle, in radii.
 (Phase 1's circle averages 5,485 m on an 8 km map — everyone is inside it, so the
-first circle can't measure luck at all.)
+first circle cannot measure luck at all.)
 
 | Drop position | Player-matches | Avg finish | Avg survival | Distance travelled |
 |---|---|---|---|---|
-| deep inside | 20,963 | 0.1950 | 644 s | 1,996 m |
-| inside | 49,384 | 0.1953 | 642 s | 2,200 m |
-| just outside | 46,004 | 0.1940 | 682 s | 2,707 m |
-| one radius out | 28,651 | 0.1968 | 739 s | 3,336 m |
-| far outside | 22,832 | 0.2033 | 784 s | 4,044 m |
+| deep inside | 20,963 | 0.521 | 644 s | 1,996 m |
+| inside | 49,384 | 0.524 | 642 s | 2,200 m |
+| just outside | 46,004 | 0.510 | 682 s | 2,707 m |
+| one radius out | 28,651 | 0.491 | 739 s | 3,336 m |
+| far outside | 22,832 | **0.480** | 784 s | 4,044 m |
 
-Landing far outside the circle costs about **0.8 percentage points** of finishing
-position — while doubling the distance you travel. Players forced to rotate
-actually *survive longer* (784 s vs 644 s), presumably by avoiding fights, and
-still finish about the same.
+Landing **far** from the circle is associated with a **better** finish — about 4
+percentile points — not a worse one. Those players also survive 22% longer. The
+plausible reading: landing inside the circle means landing where everyone else is
+headed, so the circle draw is less a lottery than a crowding signal.
 
-So the circle draw is close to fair. Given how much players blame it, that is the
-more interesting answer than a large effect would have been. Caveat: drop choice
-isn't independent of the circle, since players see it before they jump — this
-bounds the effect rather than isolating it.
+Caveat unchanged: drop choice isn't independent of the circle, since players see it
+before they jump. This bounds the association rather than isolating a cause.
 
 ## Phase 6.5: the estimator study
 
@@ -401,6 +401,60 @@ Nine correlated phases per match, 5,400 observations:
 Intervals come out **54% too narrow**. That is how a null result gets reported as
 significant.
 
+## Phase 5: prediction, calibration, and a bug that inverted two findings
+
+Target: does a player finish in the better half of the human field? Split **by time
+and by match** — a random split would let the future inform the past and scatter
+one match's shared outcome across both sides.
+
+| model | log loss | Brier | AUC | ECE |
+|---|---|---|---|---|
+| base rate | 0.69309 | 0.24997 | 0.5000 | 0.00329 |
+| point-in-time model | 0.68934 | 0.24814 | **0.5412** | 0.01182 |
+| leaked model (`ordinal_post`) | 0.32130 | 0.07766 | **0.9516** | 0.05677 |
+
+**The honest model is barely better than a coin flip**, and that is the correct
+answer to report right now: ratings have not converged, so `ordinal_pre` is the
+prior for almost every player and carries nearly no signal.
+
+The leaked model looks spectacular. On real data the leak is worth **+0.41 AUC**,
+against **+0.038** in the synthetic study. The difference is the lesson:
+
+> **Leakage looks most impressive exactly when your legitimate features are
+> weakest.** A model with no real signal plus a leak looks like a triumph.
+
+Note also that the leaked model is *worse calibrated* (ECE 0.057 vs 0.012) while
+scoring far better on AUC. Ranking and honesty are different axes, which is why
+this harness reports both.
+
+### The bug this phase found
+
+The model's first run showed a base rate of **0.9334** — 93% of players finishing
+"in the top half". That is impossible, and it exposed a real bug in Silver.
+
+`human_placement` is a *team*-level rank (teammates share a `win_place`, so
+`dense_rank` collapses them), but I divided it by `human_count`, a *player* count.
+The scale compressed by roughly the team size:
+
+| mode | avg `human_placement_pct` before | after |
+|---|---|---|
+| solo | 0.494 | 0.503 |
+| duo | 0.274 | 0.498 |
+| squad | 0.179 | 0.510 |
+
+Solo was right, which is why nothing looked obviously broken. Worse than the
+compression: it was *mode-dependent*, so pooling squad, duo and solo averaged three
+different scales together.
+
+Two published findings changed when it was fixed. The drop-zone spread went from
+0.117–0.206 to **0.345–0.602**, and the zone-luck effect **reversed direction** —
+landing far from the circle turns out to be associated with better finishes, not
+worse. Both sections above have been corrected.
+
+The bug survived a `dbt_utils.accepted_range(0, 1)` test, because every value was
+inside [0, 1]. It took a downstream model producing an absurd base rate to surface
+it. Range tests check that a number is *possible*, not that it is *right*.
+
 ## Roadmap
 
 | Phase | What |
@@ -411,7 +465,7 @@ significant.
 | 2.5 | Silver in dbt: 8 models, 35 tests, dedup + integrity flags ✅ |
 | 3 | Gold: 3 dims, 3 facts, 91 dbt nodes ✅ |
 | 4 | Ratings: Plackett-Luce fold, PIT-tested, + player-cohort collector ✅ |
-| 5 | **Placement prediction + calibration harness** ← next |
+| 5 | Prediction + calibration harness; found the placement-scale bug ✅ |
 | 6 | Balance marts: engagement matrix, drop zones, zone luck ✅ |
 | 6.5 | Estimator study — found and fixed a real shrinkage bug ✅ |
 | 7 | Scale out: S3 + Delta/Iceberg + Spark for the position layer (~750M rows at 100k matches) |

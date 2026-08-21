@@ -422,6 +422,65 @@ def study(
 
 
 @app.command()
+def predict(
+    out: str = typer.Option("reports/calibration.md", help="Where to write the report."),
+) -> None:
+    """Train the placement model and report calibration, not just accuracy."""
+    from .predict import run as run_predict
+
+    wh = settings.data_dir / "warehouse.duckdb"
+    if not wh.exists():
+        raise SystemExit(f"no warehouse at {wh} — run `just pipeline` first")
+
+    res = run_predict(wh, settings.data_dir / "predictions")
+
+    typer.echo(
+        f"train {res['train_rows']:,} rows / {res['train_matches']:,} matches   "
+        f"test {res['test_rows']:,} rows / {res['test_matches']:,} matches"
+    )
+    typer.echo(f"base rate: {res['base_rate']:.4f}\n")
+    hdr = f"{'model':<30}{'log loss':>10}{'brier':>9}{'AUC':>8}{'ECE':>9}"
+    typer.echo(hdr)
+    typer.echo("-" * len(hdr))
+    for m in res["results"]:
+        auc = "   n/a" if m.auc != m.auc else f"{m.auc:>8.4f}"
+        typer.echo(f"{m.name:<30}{m.log_loss:>10.5f}{m.brier:>9.5f}{auc}{m.ece:>9.5f}")
+
+    lines = ["# Placement prediction and calibration", "",
+             "Target: does a player finish in the better half of the human field?",
+             "",
+             f"- train: {res['train_rows']:,} rows / {res['train_matches']:,} matches",
+             f"- test: {res['test_rows']:,} rows / {res['test_matches']:,} matches",
+             f"- base rate: {res['base_rate']:.4f}",
+             "",
+             "Split by **time and by match** — never at random, which would let the "
+             "future inform the past and scatter one match's shared outcome across "
+             "both sides.",
+             "",
+             "| model | log loss | Brier | AUC | ECE |", "|---|---|---|---|---|"]
+    for m in res["results"]:
+        auc = "n/a" if m.auc != m.auc else f"{m.auc:.4f}"
+        lines.append(
+            f"| {m.name} | {m.log_loss:.5f} | {m.brier:.5f} | {auc} | {m.ece:.5f} |"
+        )
+
+    honest = next(m for m in res["results"] if m.name.startswith("point-in-time"))
+    lines += ["", "## Reliability curve (point-in-time model)", "",
+              "If the probabilities are honest, `observed` tracks `predicted`.", "",
+              "| bin | n | predicted | observed | gap |", "|---|---|---|---|---|"]
+    for r in honest.reliability:
+        lines.append(
+            f"| {r['bin']} | {r['n']:,} | {r['mean_predicted']:.4f} "
+            f"| {r['observed_rate']:.4f} | {r['gap']:+.4f} |"
+        )
+
+    path = Path(out)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+    typer.echo(f"\nwrote {path}")
+
+
+@app.command()
 def status() -> None:
     """Summarise the collection ledger."""
     with Ledger(settings.ledger_path) as ledger:

@@ -94,3 +94,7 @@ cohort limit="200":
 # Estimator studies against synthetic ground truth.
 study:
     uv run pubg study
+
+# Train the placement model and report calibration.
+predict:
+    uv run pubg predict

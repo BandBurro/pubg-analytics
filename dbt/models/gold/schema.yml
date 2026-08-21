@@ -157,3 +157,26 @@ seeds:
           - dbt_utils.accepted_range:
               min_value: 1
               inclusive: true
+
+  - name: feat_player_match
+    description: Point-in-time feature store. Every feature is computable before
+      the match starts; the label is clearly separated. Guarded by
+      assert_features_are_point_in_time.
+    columns:
+      - name: feature_sk
+        tests: [unique, not_null]
+      - name: match_id
+        tests: [not_null]
+      - name: finished_top_half
+        tests: [not_null]
+      - name: human_placement_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+      - name: prior_matches
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 0, inclusive: true}
+      - name: prior_mean_finish_pct
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}

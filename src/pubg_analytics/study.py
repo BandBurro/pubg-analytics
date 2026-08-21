@@ -138,8 +138,12 @@ def study_shrinkage_crossover(
         wins = _binomial(n, true_rate, rng)
         cells.append((true_rate, n, wins))
 
-    strata = (("tiny (n<25)", 0, 25), ("small (25-99)", 25, 100),
-              ("medium (100-499)", 100, 500), ("large (500+)", 500, 10**9))
+    strata = (
+        ("tiny (n<25)", 0, 25),
+        ("small (25-99)", 25, 100),
+        ("medium (100-499)", 100, 500),
+        ("large (500+)", 500, 10**9),
+    )
 
     out = []
     for k in prior_weights:
@@ -180,9 +184,7 @@ def study_confounded_rate(n_fights: int = 40_000, seed: int = 31) -> dict:
     p_weak, p_strong = 0.80, 0.30  # win probability vs each opponent type
     mix = {"weapon_a": 0.85, "weapon_b": 0.15}  # share of fights vs weak opponents
 
-    tally: dict[str, dict[str, list[int]]] = {
-        w: {"weak": [0, 0], "strong": [0, 0]} for w in mix
-    }
+    tally: dict[str, dict[str, list[int]]] = {w: {"weak": [0, 0], "strong": [0, 0]} for w in mix}
     for weapon, weak_share in mix.items():
         for _ in range(n_fights):
             opponent = "weak" if rng.random() < weak_share else "strong"
@@ -198,15 +200,11 @@ def study_confounded_rate(n_fights: int = 40_000, seed: int = 31) -> dict:
         naive = wins / n
         # Stratified: average the within-stratum rates, weighting strata equally
         # so the estimate no longer reflects who each weapon happened to face.
-        adjusted = _mean(
-            [t[s][0] / t[s][1] for s in ("weak", "strong") if t[s][1] > 0]
-        )
+        adjusted = _mean([t[s][0] / t[s][1] for s in ("weak", "strong") if t[s][1] > 0])
         res[weapon] = {"naive": round(naive, 4), "adjusted": round(adjusted, 4)}
 
     res["true_rates"] = {"vs_weak": p_weak, "vs_strong": p_strong}
-    res["naive_gap_pp"] = round(
-        100 * abs(res["weapon_a"]["naive"] - res["weapon_b"]["naive"]), 2
-    )
+    res["naive_gap_pp"] = round(100 * abs(res["weapon_a"]["naive"] - res["weapon_b"]["naive"]), 2)
     res["adjusted_gap_pp"] = round(
         100 * abs(res["weapon_a"]["adjusted"] - res["weapon_b"]["adjusted"]), 2
     )
@@ -228,9 +226,7 @@ class LeakageResult:
         return round(self.auc_leaky - self.auc_correct, 4)
 
 
-def study_leakage_cost(
-    n_players: int = 80, n_matches: int = 600, seed: int = 41
-) -> LeakageResult:
+def study_leakage_cost(n_players: int = 80, n_matches: int = 600, seed: int = 41) -> LeakageResult:
     """What does point-in-time leakage buy a model that isn't real?
 
     Runs the *production* rating engine over a synthetic league, then predicts each
@@ -253,7 +249,8 @@ def study_leakage_cost(
         strength.sort(reverse=True)
         groups.append(
             MatchGroup(
-                f"m{m:04d}", m,
+                f"m{m:04d}",
+                m,
                 [(idx, rank + 1, rosters[idx]) for rank, (_, idx) in enumerate(strength)],
             )
         )

@@ -62,9 +62,7 @@ def group_matches(rows: list[dict]) -> list[MatchGroup]:
     """Fold flat player rows into per-match team structures, ranked."""
     by_match: dict[str, dict] = {}
     for r in rows:
-        m = by_match.setdefault(
-            r["match_id"], {"ts": r["match_start_ts"], "teams": {}}
-        )
+        m = by_match.setdefault(r["match_id"], {"ts": r["match_start_ts"], "teams": {}})
         t = m["teams"].setdefault(r["team_id"], {"players": [], "best": None})
         t["players"].append(r["account_id"])
         best = t["best"]
@@ -106,10 +104,7 @@ def run_ratings(groups: list[MatchGroup]) -> list[dict]:
         rosters = [players for _, _, players in g.teams]
         ranks = [rank for _, rank, _ in g.teams]
 
-        pre = [
-            [state.get(p) or model.rating(name=p) for p in players]
-            for players in rosters
-        ]
+        pre = [[state.get(p) or model.rating(name=p) for p in players] for players in rosters]
         post = model.rate(pre, ranks=ranks)
 
         for (team_id, rank, players), before, after in zip(g.teams, pre, post, strict=True):

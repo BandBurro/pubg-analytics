@@ -53,12 +53,14 @@ test:
     uv run pytest -q
 
 lint:
-    uv run ruff check src tests
-    uv run ruff format --check src tests
+    uv run ruff check src tests lambda
+    uv run ruff format --check src tests lambda
+    cd infra && tofu fmt -check -recursive .
 
 fmt:
-    uv run ruff format src tests
-    uv run ruff check --fix src tests
+    uv run ruff format src tests lambda
+    uv run ruff check --fix src tests lambda
+    cd infra && tofu fmt -recursive .
 
 # How much raw data have we accumulated?
 du:
@@ -98,3 +100,15 @@ study:
 # Train the placement model and report calibration.
 predict:
     uv run pubg predict
+
+# --- cloud (see infra/README.md) ---
+
+infra-plan:
+    cd infra && tofu plan
+
+infra-apply:
+    cd infra && tofu apply
+
+# Stops all AWS charges.
+infra-destroy:
+    cd infra && tofu destroy

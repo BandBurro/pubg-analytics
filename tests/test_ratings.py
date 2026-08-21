@@ -30,9 +30,11 @@ def test_teams_ranked_by_best_human_finish():
         "m1",
         1,
         [
-            (10, "a", 5), (10, "b", 9),   # team 10's best finish is 5
-            (20, "c", 1), (20, "d", 7),   # team 20's best finish is 1 -> winner
-            (30, "e", 3),                  # team 30 -> second
+            (10, "a", 5),
+            (10, "b", 9),  # team 10's best finish is 5
+            (20, "c", 1),
+            (20, "d", 7),  # team 20's best finish is 1 -> winner
+            (30, "e", 3),  # team 30 -> second
         ],
     )
     [g] = group_matches(rows)
@@ -76,9 +78,7 @@ def test_pre_state_equals_previous_post_state():
 
 
 def test_uncertainty_shrinks_with_games_played():
-    groups = [
-        MatchGroup(f"m{i}", i, [(1, 1, ["a"]), (2, 2, ["b"])]) for i in range(12)
-    ]
+    groups = [MatchGroup(f"m{i}", i, [(1, 1, ["a"]), (2, 2, ["b"])]) for i in range(12)]
     hist = [u for u in run_ratings(groups) if u["account_id"] == "a"]
     assert hist[-1]["sigma_post"] < hist[0]["sigma_pre"]
 
@@ -117,9 +117,7 @@ def test_engine_recovers_known_skill_ordering():
     groups = []
     for m in range(n_matches):
         picked = rng.sample(players, team_size * teams_per_match)
-        rosters = [
-            picked[i * team_size : (i + 1) * team_size] for i in range(teams_per_match)
-        ]
+        rosters = [picked[i * team_size : (i + 1) * team_size] for i in range(teams_per_match)]
         # Team performance is mean true skill plus noise, so results are
         # informative but far from deterministic.
         strength = [
@@ -127,9 +125,7 @@ def test_engine_recovers_known_skill_ordering():
             for i, r in enumerate(rosters)
         ]
         strength.sort(reverse=True)
-        teams = [
-            (idx, rank + 1, rosters[idx]) for rank, (_, idx) in enumerate(strength)
-        ]
+        teams = [(idx, rank + 1, rosters[idx]) for rank, (_, idx) in enumerate(strength)]
         groups.append(MatchGroup(f"m{m:04d}", m, teams))
 
     updates = run_ratings(groups)

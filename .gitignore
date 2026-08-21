@@ -34,3 +34,11 @@ dbt/.user.yml
 
 # Reports are generated, not authored.
 reports/
+
+# OpenTofu / Terraform
+infra/.terraform/
+infra/.build/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform.tfvars
+infra/.terraform.lock.hcl

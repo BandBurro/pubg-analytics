@@ -455,12 +455,60 @@ The bug survived a `dbt_utils.accepted_range(0, 1)` test, because every value wa
 inside [0, 1]. It took a downstream model producing an absurd base rate to surface
 it. Range tests check that a number is *possible*, not that it is *right*.
 
+## Phase 1.5: the cloud collector
+
+Collection had three single points of failure, all of them the laptop: sleep,
+changing networks, and a corporate firewall doing TLS inspection. Matches age out
+of the PUBG API after **14 days**, so uptime is not a nicety — it is the difference
+between having data and not.
+
+`infra/` provisions the whole thing as code: S3 for the lake, DynamoDB for the
+ledger, a Lambda on a 2-hour EventBridge schedule, the API key in an SSM
+SecureString, log retention, budget alerts and an error alarm.
+
+### Two design decisions worth the words
+
+**The Lambda has zero dependencies.** `orjson` and `httpx` ship compiled wheels,
+so running them on Lambda's ARM Linux runtime from a macOS laptop means
+cross-compilation, a layer, or a container image. None of that buys anything for a
+function that fetches JSON and writes bytes — so it uses `urllib` and `json` from
+the standard library, with `ThreadPoolExecutor` for concurrency instead of asyncio.
+The result is a ~10 KB zip and no build step. (`boto3` is already in the runtime.)
+
+**State moves from SQLite to DynamoDB.** Lambda's filesystem is ephemeral and not
+shared between invocations, so a local ledger file would forget everything each
+run. A GSI on `status` lets it query oldest-pending rather than scan the table —
+with the caveat, documented in `infra/README.md` rather than discovered later, that
+a four-value partition key concentrates writes and would need sharding at millions
+of items.
+
+### Cost, decided rather than discovered
+
+| Choice | Why |
+|---|---|
+| **No VPC, so no NAT Gateway** | ~$32/month to do nothing. The classic surprise bill |
+| SSM Parameter Store, not Secrets Manager | Free vs $0.40/secret/month for the same job |
+| arm64 | ~20% cheaper per GB-second, and the workload is IO-bound anyway |
+| Explicit log retention | CloudWatch logs default to *never* expiring |
+| Budget alerts at 25 / 80 / forecast-100% | The forecast alert catches a runaway before it costs anything |
+
+Realistically under **$2/month**, trending up with S3 as the lake grows. `tofu
+destroy` stops all charges — which is the actual reason this is code rather than
+clicked together in a console.
+
+### What's yours to do
+
+Creating an AWS account and handling credentials aren't things I can do. The
+prerequisites and the four commands are in [`infra/README.md`](infra/README.md).
+Note that `var.aws_profile` has no default on purpose, so a stray `default`
+profile — possibly a work account — can never be picked up by accident.
+
 ## Roadmap
 
 | Phase | What |
 |---|---|
 | 1 | Collector ✅ — running on a 2h schedule |
-| 1.5 | Lift the collector to AWS Lambda + EventBridge + S3, via Terraform |
+| 1.5 | Cloud collector: Lambda + S3 + DynamoDB as code ✅ (awaiting an AWS account to apply) |
 | 2 | Bronze → typed Parquet: 8 tables, 1.53M rows ✅ |
 | 2.5 | Silver in dbt: 8 models, 35 tests, dedup + integrity flags ✅ |
 | 3 | Gold: 3 dims, 3 facts, 91 dbt nodes ✅ |
@@ -468,7 +516,7 @@ it. Range tests check that a number is *possible*, not that it is *right*.
 | 5 | Prediction + calibration harness; found the placement-scale bug ✅ |
 | 6 | Balance marts: engagement matrix, drop zones, zone luck ✅ |
 | 6.5 | Estimator study — found and fixed a real shrinkage bug ✅ |
-| 7 | Scale out: S3 + Delta/Iceberg + Spark for the position layer (~750M rows at 100k matches) |
+| 7 | **Scale out: Delta/Iceberg + Spark for the position layer** ← next |
 | 7.5 | Deliberately induce skew and fix it — where distributed intuition comes from |
 
 ## Stack

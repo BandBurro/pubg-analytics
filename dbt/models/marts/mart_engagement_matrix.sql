@@ -10,9 +10,10 @@
 -- * **Symmetry.** A win rate needs both directions. Counting only "X killed Y"
 --   measures how often X is used, not whether X beats Y. Each cell pairs
 --   wins(X,Y) against wins(Y,X).
--- * **Shrinkage.** With 11 classes and 6 range buckets there are ~660 cells, so
---   the tail is thin. Raw rates are published alongside shrunk ones, but only the
---   shrunk rate should ever be ranked.
+-- * **Shrinkage.** With 11 classes and 6 range buckets the tail is thin. Raw rates
+--   are published alongside shrunk ones, but only the shrunk rate should be
+--   ranked. The prior weight is derived by empirical Bayes from the observed
+--   spread of true rates (k = 10), not chosen by feel — see the shrink_rate macro.
 --
 -- Mirror matchups are kept and flagged. They are 50% by construction and carry no
 -- signal, which is exactly why they must be excluded from comparisons rather than
@@ -99,7 +100,7 @@ select
     )                                           as raw_win_rate,
 
     round(
-        {{ shrink_rate('p.a_beats_b', 'p.a_beats_b + p.b_beats_a', 'g.prior', 200) }}, 4
+        {{ shrink_rate('p.a_beats_b', 'p.a_beats_b + p.b_beats_a', 'g.prior', 10) }}, 4
     )                                           as shrunk_win_rate,
 
     -- How far shrinkage had to move the estimate. Large values mark cells whose
@@ -107,10 +108,13 @@ select
     round(
         abs(
             p.a_beats_b / cast(nullif(p.a_beats_b + p.b_beats_a, 0) as double)
-            - {{ shrink_rate('p.a_beats_b', 'p.a_beats_b + p.b_beats_a', 'g.prior', 200) }}
+            - {{ shrink_rate('p.a_beats_b', 'p.a_beats_b + p.b_beats_a', 'g.prior', 10) }}
         ), 4
     )                                           as shrinkage_applied,
 
+    -- 200 fights is not precision: the estimator study puts the 90th-percentile
+    -- error at a 200-observation cell at 5.5 pp. It is the floor for looking at
+    -- a cell at all, not for trusting small differences between cells.
     p.a_beats_b + p.b_beats_a >= 200            as has_enough_fights,
 
     -- Both directions actually observed. Without this, a 100% win rate means

@@ -317,6 +317,90 @@ more interesting answer than a large effect would have been. Caveat: drop choice
 isn't independent of the circle, since players see it before they jump — this
 bounds the effect rather than isolating it.
 
+## Phase 6.5: the estimator study
+
+Every other phase measures PUBG. This one measures the methods — and it is the one
+thing real data cannot do, because you can only ask *how wrong is this estimator*
+when you already know the answer. Five studies, `just study`, five numbers.
+
+### 1. How much evidence a win rate actually needs
+
+True rate 0.60, 2,000 replicates per row.
+
+| n | mean abs error | p90 abs error | within 5pp |
+|---|---|---|---|
+| 25 | 0.0781 | 0.1600 | 45% |
+| 100 | 0.0392 | 0.0800 | 68% |
+| 200 | 0.0275 | 0.0550 | 84% |
+| 500 | 0.0171 | 0.0360 | 98% |
+| 2,000 | 0.0086 | 0.0180 | 100% |
+
+**A 200-observation cell still has a 90th-percentile error of 5.5 pp.** That is the
+number to quote when someone ranks matchups whose sparsest cells hold a few dozen
+fights.
+
+### 2. The study found a bug in this project's own code
+
+The engagement matrix shipped with a shrinkage prior of **k = 200**, chosen by
+feel. Sweeping it against known truth:
+
+| prior weight | overall RMSE | tiny | small | medium | large |
+|---|---|---|---|---|---|
+| 0 | 0.1600 | 0.2354 | 0.0714 | 0.0357 | 0.0179 |
+| 10 | 0.0766 | 0.1016 | 0.0611 | 0.0345 | 0.0178 |
+| **20** | **0.0748** | 0.0988 | 0.0602 | 0.0347 | 0.0179 |
+| 200 | 0.0973 | 0.1141 | 0.0963 | 0.0658 | 0.0298 |
+
+k=200 was worse than k=20 in **every** stratum. Shrinkage itself is clearly worth
+it — it more than halves RMSE on tiny cells — but that prior was far too strong.
+
+The fix isn't to guess better. For a prior centred on p with true-rate variance s²,
+the equivalent sample size is `k = p(1-p)/s² - 1`, and s² is estimable by
+subtracting average binomial sampling variance from the observed variance of the
+rates. On the real matchup cells: s² = 0.0279 (sd 0.167), so **k = 8**. The mart now
+uses 10.
+
+The practical cost of the original mistake: sniper-vs-LMG at 100–200 m, a cell with
+896 observations, was being reported as **0.817 instead of 0.883**. The
+over-shrinkage was distorting the best-evidenced results most.
+
+### 3. Confounding, from first principles
+
+Two weapons with **identical** true lethality, one used mostly against weak
+opponents:
+
+| weapon | naive rate | stratified rate |
+|---|---|---|
+| A (85% vs weak) | 0.7214 | 0.5452 |
+| B (15% vs weak) | 0.3733 | 0.5483 |
+
+A **34.8 pp** gap collapses to **0.3 pp** once you stratify by who they faced. This
+is the MP5K finding reproduced from first principles — the entire apparent
+difference was matchmaking, not the weapon.
+
+### 4. What leakage buys that isn't real
+
+Running the production rating engine over a synthetic league, then predicting each
+result twice:
+
+- from the rating known **before** the match: AUC **0.5870**
+- from the rating computed **after** it: AUC **0.6253**
+- inflation: **+0.038** over 12,000 observations
+
+A free 4-point AUC gain that evaporates in production, because `ordinal_post`
+already contains the answer.
+
+### 5. Confidence intervals that lie
+
+Nine correlated phases per match, 5,400 observations:
+
+- naive standard error (assuming independence): 0.01921
+- actual standard error: 0.04179
+- **understated by 2.17x**, design effect 4.73
+
+Intervals come out **54% too narrow**. That is how a null result gets reported as
+significant.
+
 ## Roadmap
 
 | Phase | What |
@@ -329,7 +413,7 @@ bounds the effect rather than isolating it.
 | 4 | Ratings: Plackett-Luce fold, PIT-tested, + player-cohort collector ✅ |
 | 5 | **Placement prediction + calibration harness** ← next |
 | 6 | Balance marts: engagement matrix, drop zones, zone luck ✅ |
-| 6.5 | Estimator study against synthetic ground truth |
+| 6.5 | Estimator study — found and fixed a real shrinkage bug ✅ |
 | 7 | Scale out: S3 + Delta/Iceberg + Spark for the position layer (~750M rows at 100k matches) |
 | 7.5 | Deliberately induce skew and fix it — where distributed intuition comes from |
 

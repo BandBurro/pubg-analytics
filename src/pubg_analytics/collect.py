@@ -339,6 +339,89 @@ def rate() -> None:
 
 
 @app.command()
+def study(
+    out: str = typer.Option("reports/estimator_study.md", help="Where to write the report."),
+) -> None:
+    """Run the estimator studies against synthetic ground truth."""
+    from . import study as st
+
+    lines: list[str] = ["# Estimator study", ""]
+    lines.append(
+        "Measured against synthetic data with known truth — the one thing real "
+        "data cannot do, because you can only ask *how wrong is this estimator* "
+        "when you already know the answer."
+    )
+
+    typer.echo("1/5 sample-size floor...")
+    rows = st.study_sample_size_floor()
+    lines += ["", "## 1. How many fights before a win rate is trustworthy?", "",
+              "True rate 0.60, 2,000 replicates per row.", "",
+              "| n | mean abs error | p90 abs error | within 2pp | within 5pp |",
+              "|---|---|---|---|---|"]
+    for r in rows:
+        lines.append(
+            f"| {r['n']:,} | {r['mean_abs_error']:.4f} | {r['p90_abs_error']:.4f} "
+            f"| {r['within_2pp']:.0%} | {r['within_5pp']:.0%} |"
+        )
+
+    lines += ["",
+              "The `within 2pp` column is non-monotonic at tiny n, and that is a "
+              "lattice artefact rather than a property of the estimator: with 10 "
+              "fights the only achievable estimates are 0.0, 0.1, ... 1.0, so "
+              "\"within 2pp\" really means \"landed exactly on 0.60\". Read the "
+              "p90 error column, which is monotonic."]
+
+    typer.echo("2/5 shrinkage crossover...")
+    rows2 = st.study_shrinkage_crossover()
+    lines += ["", "## 2. Where does shrinkage help, and where does it over-smooth?", "",
+              "RMSE against true rate, by prior weight and cell size.", "",
+              "| prior weight | stratum | cells | RMSE |", "|---|---|---|---|"]
+    for r in rows2:
+        lines.append(f"| {r['prior_weight']} | {r['stratum']} | {r['cells']:,} | {r['rmse']:.4f} |")
+
+    typer.echo("3/5 confounded rate...")
+    c = st.study_confounded_rate()
+    lines += ["", "## 3. Bias from an unmeasured confounder", "",
+              "Two weapons with **identical** true lethality; one is used mostly "
+              "against weak opponents.", "",
+              "| weapon | naive rate | stratified rate |", "|---|---|---|",
+              f"| A (85% vs weak) | {c['weapon_a']['naive']:.4f} "
+              f"| {c['weapon_a']['adjusted']:.4f} |",
+              f"| B (15% vs weak) | {c['weapon_b']['naive']:.4f} "
+              f"| {c['weapon_b']['adjusted']:.4f} |",
+              "",
+              f"Naive gap: **{c['naive_gap_pp']} pp**. After stratifying: "
+              f"**{c['adjusted_gap_pp']} pp**. The entire apparent difference was "
+              "who each weapon happened to face."]
+
+    typer.echo("4/5 leakage cost...")
+    lk = st.study_leakage_cost()
+    lines += ["", "## 4. What point-in-time leakage buys that isn't real", "",
+              f"- AUC from the rating known **before** the match: **{lk.auc_correct:.4f}**",
+              f"- AUC from the rating computed **after** it: **{lk.auc_leaky:.4f}**",
+              f"- Inflation: **{lk.inflation:+.4f}** over {lk.observations:,} observations",
+              "", lk.notes[0]]
+
+    typer.echo("5/5 cluster design effect...")
+    cd = st.study_cluster_design_effect()
+    lines += ["", "## 5. Confidence intervals when clustering is ignored", "",
+              f"- {cd['phases_per_match']} correlated phases per match, "
+              f"{cd['observations_per_replicate']:,} observations",
+              f"- Naive standard error: {cd['naive_se']:.5f}",
+              f"- Actual standard error: {cd['empirical_se']:.5f}",
+              f"- **Understated by {cd['se_understated_by']:.2f}x** "
+              f"(design effect {cd['design_effect']:.2f})",
+              "",
+              f"Intervals come out **{cd['ci_too_narrow_pct']:.0f}% too narrow**, "
+              "which is how a null result gets reported as significant."]
+
+    path = Path(out)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+    typer.echo(f"\nwrote {path}")
+
+
+@app.command()
 def status() -> None:
     """Summarise the collection ledger."""
     with Ledger(settings.ledger_path) as ledger:

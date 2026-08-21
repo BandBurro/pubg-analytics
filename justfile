@@ -90,3 +90,7 @@ logs-err:
 # Expand collection along player histories (what ratings need).
 cohort limit="200":
     uv run pubg cohort --limit {{limit}}
+
+# Estimator studies against synthetic ground truth.
+study:
+    uv run pubg study

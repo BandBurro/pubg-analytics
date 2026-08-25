@@ -503,6 +503,57 @@ prerequisites and the four commands are in [`infra/README.md`](infra/README.md).
 Note that `var.aws_profile` has no default on purpose, so a stray `default`
 profile — possibly a work account — can never be picked up by accident.
 
+## The scale test: was AUC 0.54 a data problem?
+
+The corpus went from 3,556 matches to **31,875** — 1.76M rating updates, 273,721
+players with rating history, up from 10,698.
+
+| model | AUC at 3,556 matches | AUC at 31,875 |
+|---|---|---|
+| point-in-time | 0.5412 | **0.5872** |
+| leaked (`ordinal_post`) | 0.9516 | **0.7956** |
+| **leakage gap** | **+0.410** | **+0.208** |
+
+The honest model improved. The *leaked* model got much worse — which is the
+prediction from Phase 5 confirmed: leakage looks most impressive exactly when the
+legitimate features are weakest, so as real signal appears, the leak's marginal
+contribution collapses. It is also now badly miscalibrated (ECE 0.162 against
+0.010), scoring far better on AUC while lying about its probabilities.
+
+### The headline was 50% noise
+
+Segmenting the test set by how much history each player actually had:
+
+| Rating history | Test rows | AUC (rating alone) | AUC (prior form) |
+|---|---|---|---|
+| **0 — prior only** | **220,389** | **0.5000** | n/a |
+| 1–4 | 141,362 | 0.5474 | 0.5539 |
+| 5–9 | 24,430 | 0.6202 | 0.6354 |
+| 10–29 | 23,882 | 0.7111 | 0.7325 |
+| **30+** | **30,512** | **0.7414** | **0.7657** |
+
+Half the test set has *no* history, so its rating is a constant and its AUC is
+exactly 0.5000. Among players with 30+ rated games a **single feature** reaches
+**0.74** — and the plateau lands at ~30 matches, which is precisely what the
+synthetic convergence study predicted before any of this data existed.
+
+**So: a data problem, decisively.** Not the engine, not the features.
+
+### Two things this also exposed
+
+**A plain historical average beats the rating system.** `prior_mean_finish_pct` —
+"how has this player finished before" — outscores the Plackett-Luce ordinal at
+*every* history level (0.766 vs 0.741 at 30+). The team-aware Bayesian machinery
+is not yet earning its complexity over a running mean. That may change with more
+depth per player, but as of now it is the honest result.
+
+**The `finished_top_half` label misbehaves in small human fields.** Top-half rate
+by history bucket runs 0.516 → 0.412, which looks like experienced players
+finishing *worse*. It is an artifact: with only three human teams the percentiles
+are 0.0, 0.5, 1.0, and `<= 0.5` captures two of three. Bot-heavy lobbies have tiny
+human fields, so their label is inflated. A percentile target, or a minimum
+human-team count, would remove it.
+
 ## Roadmap
 
 | Phase | What |

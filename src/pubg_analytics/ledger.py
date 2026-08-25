@@ -32,6 +32,16 @@ CREATE TABLE IF NOT EXISTS shred (
     shredded_at TEXT NOT NULL,
     part        INTEGER
 );
+
+-- Positions are shredded in a separate pass with separate state. The stream is
+-- ~15% of all events and roughly 5,500 rows per match, so it must be possible to
+-- re-run or re-point it without touching the event tables.
+CREATE TABLE IF NOT EXISTS shred_position (
+    match_id    TEXT PRIMARY KEY,
+    shredded_at TEXT NOT NULL,
+    part        INTEGER,
+    rows        INTEGER
+);
 """
 
 
@@ -154,6 +164,39 @@ class Ledger:
             [(mid, _now(), part) for mid in match_ids],
         )
         self.conn.commit()
+
+    def unshredded_positions(self, limit: int) -> list[tuple[str, str]]:
+        rows = self.conn.execute(
+            """
+            SELECT m.match_id, m.telemetry_path
+            FROM match m
+            LEFT JOIN shred_position s USING (match_id)
+            WHERE m.status = 'done' AND m.telemetry_path IS NOT NULL AND s.match_id IS NULL
+            ORDER BY m.match_created_at
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [(r["match_id"], r["telemetry_path"]) for r in rows]
+
+    def mark_positions_shredded(self, entries: list[tuple[str, int]], part: int) -> None:
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO shred_position (match_id, shredded_at, part, rows) "
+            "VALUES (?, ?, ?, ?)",
+            [(mid, _now(), part, n) for mid, n in entries],
+        )
+        self.conn.commit()
+
+    def next_position_part(self) -> int:
+        row = self.conn.execute("SELECT coalesce(max(part), -1) + 1 FROM shred_position").fetchone()
+        return int(row[0])
+
+    def position_stats(self) -> dict[str, int]:
+        r = self.conn.execute(
+            "SELECT count(*), coalesce(sum(rows), 0) FROM shred_position"
+        ).fetchone()
+        fetched = self.conn.execute("SELECT count(*) FROM match WHERE status='done'").fetchone()[0]
+        return {"matches": int(r[0]), "rows": int(r[1]), "remaining": fetched - int(r[0])}
 
     def next_shred_part(self) -> int:
         row = self.conn.execute("SELECT coalesce(max(part), -1) + 1 FROM shred").fetchone()

@@ -112,3 +112,7 @@ infra-apply:
 # Stops all AWS charges.
 infra-destroy:
     cd infra && tofu destroy
+
+# Shred the position stream (separate, high-volume pass).
+shred-positions limit="0":
+    uv run pubg shred-positions --limit {{limit}}

@@ -299,6 +299,54 @@ def cohort(
     asyncio.run(_cohort(limit, min_matches))
 
 
+@app.command(name="shred-positions")
+def shred_positions(
+    limit: int = typer.Option(0, help="Max matches; 0 means everything pending."),
+    batch: int = typer.Option(500, help="Matches per Parquet part."),
+) -> None:
+    """Shred the LogPlayerPosition stream into its own table.
+
+    Separate pass, separate state. Positions are ~15% of events but ~5,500 rows
+    per match, so folding them into the main shredder would mean rewriting
+    hundreds of millions of rows whenever an unrelated column changed.
+    """
+    from .shred import PositionShredder, read_gz_json
+
+    with Ledger(settings.ledger_path) as ledger:
+        todo = ledger.unshredded_positions(limit if limit > 0 else 10_000_000)
+        if not todo:
+            typer.echo("nothing to shred")
+            return
+        typer.echo(f"shredding positions for {len(todo):,} matches, batches of {batch}...")
+
+        part = ledger.next_position_part()
+        total = skipped = 0
+
+        for start in range(0, len(todo), batch):
+            chunk = todo[start : start + batch]
+            ps = PositionShredder(settings.bronze_dir)
+            done: list[tuple[str, int]] = []
+            for match_id, tele_path in chunk:
+                try:
+                    n = ps.add(match_id, read_gz_json(Path(tele_path)))
+                    done.append((match_id, n))
+                except (OSError, orjson.JSONDecodeError, KeyError) as exc:
+                    typer.echo(f"  skip {match_id}: {type(exc).__name__}", err=True)
+                    skipped += 1
+            written = ps.flush(part)
+            ledger.mark_positions_shredded(done, part)
+            total += written
+            typer.echo(
+                f"  part {part:05d}: {len(done)} matches -> {written:,} rows "
+                f"(running total {total:,})"
+            )
+            part += 1
+
+    typer.echo(f"\n{total:,} position rows written")
+    if skipped:
+        typer.echo(f"skipped {skipped} match(es)")
+
+
 @app.command()
 def rate() -> None:
     """Run the skill-rating engine over the warehouse and emit rating updates."""

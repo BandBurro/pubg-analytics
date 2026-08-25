@@ -370,3 +370,65 @@ def match_definition(events: list[dict]) -> tuple[str | None, str | None]:
         if e.get("_T") == "LogMatchDefinition":
             return e.get("MatchId"), (e.get("PingQuality") or None)
     return None, None
+
+
+# ------------------------------------------------------------------ positions
+
+
+class PositionShredder:
+    """Extracts LogPlayerPosition into its own table.
+
+    Kept separate from the event shredder for one reason: volume. Positions are
+    ~15% of events but roughly 5,500 rows per match — at 31,875 matches that is
+    ~174M rows, an order of magnitude more than every other table combined. Mixing
+    it into the main pass would mean re-writing 174M rows any time a kill-event
+    column changed.
+
+    PUBG samples positions roughly every 10 seconds, which is already sparse, so
+    there is nothing to downsample: this is the native resolution.
+    """
+
+    def __init__(self, out_dir: Path):
+        self.out_dir = out_dir / "player_position"
+        self.rows: list[dict] = []
+
+    def add(self, match_id: str, events: list[Any]) -> int:
+        before = len(self.rows)
+        for e in events:
+            if e.get("_T") != "LogPlayerPosition":
+                continue
+            ch = e.get("character") or {}
+            x, y, z = _loc(ch)
+            acct = ch.get("accountId")
+            self.rows.append(
+                {
+                    "match_id": match_id,
+                    "event_ts": e.get("_D"),
+                    "elapsed_time_s": e.get("elapsedTime"),
+                    "num_alive_players": e.get("numAlivePlayers"),
+                    "account_id": acct,
+                    "is_bot": is_bot(acct),
+                    "team_id": ch.get("teamId"),
+                    "health": ch.get("health"),
+                    "ranking": ch.get("ranking"),
+                    "in_vehicle": ch.get("isInVehicle"),
+                    "in_blue_zone": ch.get("isInBlueZone"),
+                    # Centimetres, as PUBG reports them. Converted in Silver.
+                    "x": x,
+                    "y": y,
+                    "z": z,
+                }
+            )
+        return len(self.rows) - before
+
+    def flush(self, part: int) -> int:
+        if not self.rows:
+            return 0
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        path = self.out_dir / f"part-{part:05d}.parquet"
+        tmp = path.with_suffix(".parquet.tmp")
+        pl.DataFrame(self.rows, infer_schema_length=None).write_parquet(tmp, compression="zstd")
+        tmp.replace(path)
+        n = len(self.rows)
+        self.rows.clear()
+        return n

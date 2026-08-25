@@ -598,6 +598,64 @@ bound.** Which makes this a deferral with a date, not an excuse.
 The genuine finding from the benchmark isn't about Spark at all: **22.7 million
 kilometres** of player movement across 136.9M measured steps.
 
+## The position layer, and three confounds it hid
+
+207M rows became answerable via `slv_player_position` (a **view** — nothing queries
+it at row grain, so a 3 GB copy would buy nothing) and `mart_player_rotation`
+(match × player, 1.79M rows). The first version of that mart produced confident
+nonsense three separate times.
+
+**1. Position logging starts on the aircraft.** Mean altitude in the first 60 s is
+**574 m**, max 1,506 m, across 22.9M ticks. Naive distance ÷ time gave **45 m/s —
+162 km/h** — for players who died early, because their whole tracked window was
+flight. Fixed by counting only positions at or after each player's own landing.
+
+**2. The safe-zone radius collapses 5,637 m → 110 m** across phases, a 51× shrink.
+So distance-from-centre ÷ radius measured *survival*, not zone discipline — it
+inflated for anyone who lasted into the small circles. Replaced with absolute
+distance plus a scale-free "was outside the zone" share.
+
+**3. Redeploys put players back in the air mid-match.** After fixing (1), a range
+test still caught **6 players at 64–76 m/s** — every one with 2–4 parachute
+landings and single steps of 257–787 m/s. Fixed with a physical bound (nothing
+drivable in PUBG exceeds ~40 m/s), with the excluded steps *counted* in
+`implausible_steps`, because a silent filter is how a known artifact becomes an
+unknown one.
+
+That third one was caught by a test I added specifically to guard against the
+first: `mean_speed_mps` between 0 and 60. It failed on the very next build.
+
+### What the data says once it's clean
+
+Speeds now land at **1.26–3.65 m/s** — a person walking and running.
+
+The naive view still can't separate cause from effect: surviving longer both
+enables movement and results from it. So holding survival roughly fixed —
+squad players alive 300–600 s — and splitting by time spent outside the safe zone:
+
+| Outside-zone quartile | Players | Share outside | Avg finish | Kills |
+|---|---|---|---|---|
+| 1–2 | 120,330 | 0.000 | 0.573 | 0.78 |
+| 3 | 60,164 | 0.010 | 0.566 | 0.79 |
+| **4** | 60,164 | **0.292** | **0.605** | **0.36** |
+
+Players who spent ~29% of the same survival window outside the circle finished
+**3.3 percentage points worse and got less than half the kills**. Being caught in
+the gas means running, not fighting.
+
+Note the measure is **zero-inflated** — about half of all players are *never*
+outside the zone, so quartiles 1 and 2 are the same group split arbitrarily. The
+real contrast is Q4 against everyone else, and saying so is more honest than
+presenting four tidy quartiles.
+
+### One portability bug worth recording
+
+Making `slv_player_position` a view exposed something subtle: the dbt source used
+a **relative** external path. That is harmless for materialised models, where the
+path is read once at build time, but a view re-resolves it on **every query** — so
+it worked from `dbt/` and failed from everywhere else. Now baked absolute via
+`PUBG_BRONZE`.
+
 ## Roadmap
 
 | Phase | What |
@@ -611,7 +669,7 @@ kilometres** of player movement across 136.9M measured steps.
 | 5 | Prediction + calibration harness; found the placement-scale bug ✅ |
 | 6 | Balance marts: engagement matrix, drop zones, zone luck ✅ |
 | 6.5 | Estimator study — found and fixed a real shrinkage bug ✅ |
-| 7 | Position layer: 207M rows shredded; **measured DuckDB, Spark not warranted yet** ✅ |
+| 7 | Position layer: 207M rows, Silver + rotation mart, 3 confounds caught ✅ |
 | 7b | Spark + Delta — deferred until ~300k matches (~1 month of collection) |
 | 7.5 | Induce skew and fix it — waits on 7b; measured skew today is only 2.2x |
 

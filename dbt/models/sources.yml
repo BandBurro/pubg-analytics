@@ -7,7 +7,13 @@ sources:
       contains bots, tutorial matches and duplicate event emissions. Silver is
       where those get handled, visibly.
     meta:
-      external_location: "read_parquet('../data/bronze/{name}/*.parquet', union_by_name=true)"
+      # Absolute, via env var. A relative path is fine for materialised models —
+      # it is only read at build time — but slv_player_position is a VIEW, so it
+      # re-resolves the path on every query and breaks unless the caller happens
+      # to be sitting in dbt/. The justfile exports PUBG_BRONZE.
+      external_location: >-
+        read_parquet('{{ env_var('PUBG_BRONZE', '../data/bronze') }}/{name}/*.parquet',
+        union_by_name=true)
     tables:
       - name: match
       - name: match_player
@@ -17,12 +23,14 @@ sources:
       - name: landing
       - name: phase
       - name: game_state
+      - name: player_position
 
   - name: ratings
     description: >
       Output of the Python rating engine (`pubg rate`). Computed outside dbt
       because a rating system is a sequential fold, not a set operation.
     meta:
-      external_location: "read_parquet('../data/ratings/{name}.parquet')"
+      external_location: >-
+        read_parquet('{{ env_var('PUBG_RATINGS', '../data/ratings') }}/{name}.parquet')
     tables:
       - name: fact_rating_update

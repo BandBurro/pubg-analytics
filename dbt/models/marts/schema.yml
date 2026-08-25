@@ -67,3 +67,36 @@ models:
       - name: avg_finish_pct
         tests:
           - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+
+  - name: mart_player_rotation
+    description: Movement behaviour per player per match, joined to outcome.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [match_id, account_id]
+    columns:
+      - name: rotation_sk
+        tests: [unique, not_null]
+      - name: ticks
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 1, inclusive: true}
+      - name: blue_zone_share
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+      - name: share_outside_zone
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+      - name: vehicle_share
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1, inclusive: true}
+      - name: distance_travelled_m
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, inclusive: true}
+      # The aircraft confound would reappear as impossible speeds. A sprinting
+      # player is ~6 m/s; a fast vehicle ~30. Anything past 60 means flight
+      # positions have leaked back into the mart.
+      - name: mean_speed_mps
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 60, inclusive: true}
+      - name: implausible_steps
+        tests: [not_null]

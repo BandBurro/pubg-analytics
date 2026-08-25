@@ -133,3 +133,17 @@ models:
     columns:
       - name: num_alive_players
         tests: [not_null]
+
+  - name: slv_player_position
+    description: >
+      207M position rows, typed and in metres. Materialised as a VIEW on purpose —
+      nothing queries this at row grain, so a 3 GB copy would buy nothing. Not
+      deduped either: only 12 of 207,508,882 rows duplicate on
+      (match_id, account_id, event_ts), unlike landing events at 22%.
+    columns:
+      - name: match_id
+        tests: [not_null]
+      - name: account_id
+        tests: [not_null]
+      - name: event_ts
+        tests: [not_null]

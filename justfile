@@ -26,16 +26,21 @@ shred limit="0" batch="250":
     uv run pubg shred --limit {{limit}} --batch {{batch}}
 
 # Build the warehouse (Silver models + tests).
+# PUBG_BRONZE/PUBG_RATINGS are absolute so views survive being queried from
+# anywhere, not just from inside dbt/.
 build:
-    cd dbt && uv run dbt build --profiles-dir .
+    cd dbt && PUBG_BRONZE="$PWD/../data/bronze" PUBG_RATINGS="$PWD/../data/ratings" \
+      uv run dbt build --profiles-dir .
 
 # Full pipeline: warehouse -> ratings -> rating models.
 # The rating engine sits between two dbt runs: it reads fact_player_match and
 # writes a table that dbt then models.
 pipeline:
-    cd dbt && uv run dbt build --profiles-dir . --exclude tag:ratings
+    cd dbt && PUBG_BRONZE="$PWD/../data/bronze" PUBG_RATINGS="$PWD/../data/ratings" \
+      uv run dbt build --profiles-dir . --exclude tag:ratings
     uv run pubg rate
-    cd dbt && uv run dbt build --profiles-dir .
+    cd dbt && PUBG_BRONZE="$PWD/../data/bronze" PUBG_RATINGS="$PWD/../data/ratings" \
+      uv run dbt build --profiles-dir .
 
 # Run the skill-rating engine.
 rate:

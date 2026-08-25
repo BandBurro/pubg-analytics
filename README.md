@@ -554,6 +554,50 @@ are 0.0, 0.5, 1.0, and `<= 0.5` captures two of three. Bot-heavy lobbies have ti
 human fields, so their label is inflated. A percentile target, or a minimum
 human-team count, would remove it.
 
+## Phase 7: measuring before reaching for Spark
+
+The roadmap assumed the position layer was where a single machine gives up. That
+assumption deserved measuring, because *"I used Spark on data that fit in RAM"* is
+a tell, and knowing when **not** to reach for it is the more useful judgement.
+
+The position stream shredded to **207,508,882 rows in 3.0 GB** of Parquet across
+31,875 matches. On one laptop, via DuckDB (`scripts/bench_positions.py`):
+
+| query | wall |
+|---|---|
+| full scan count | 0.02 s |
+| group by match (31,875 groups) | 0.08 s |
+| grid heatmap (bucket + aggregate) | 0.45 s |
+| **rotation distance** (window over every row, per player per match) | **29.94 s** |
+| **kills × positions, ±10 s range join** → 269,741,806 pairs | **2.85 s** |
+
+A 270-million-pair range join in under three seconds. And the skew that was
+supposed to make this painful isn't there: pairs per match run min 4, avg 8,579,
+max 18,647 — **max/avg of 2.2×**, nowhere near a hot partition.
+
+**Verdict: Spark is not warranted at this scale.** Not "not yet convenient" —
+genuinely not needed. The hardest operation in the project takes 30 seconds on a
+machine that costs nothing to run.
+
+### Where the crossover actually is
+
+Extrapolating from the 30-second window scan, and at ~6,510 position rows per
+match:
+
+| corpus | position rows | est. hardest query |
+|---|---|---|
+| 31,875 matches (today) | 207M | 30 s |
+| ~300k matches | ~2B | ~5 min |
+| ~3M matches | ~20B | ~50 min, plus memory pressure |
+
+So distributed compute starts to earn its keep somewhere around **300k–3M
+matches** — 10× to 100× the current corpus. The cloud collector runs 800 matches
+per invocation, twelve times a day: **roughly a month of uptime reaches the lower
+bound.** Which makes this a deferral with a date, not an excuse.
+
+The genuine finding from the benchmark isn't about Spark at all: **22.7 million
+kilometres** of player movement across 136.9M measured steps.
+
 ## Roadmap
 
 | Phase | What |
@@ -567,8 +611,9 @@ human-team count, would remove it.
 | 5 | Prediction + calibration harness; found the placement-scale bug ✅ |
 | 6 | Balance marts: engagement matrix, drop zones, zone luck ✅ |
 | 6.5 | Estimator study — found and fixed a real shrinkage bug ✅ |
-| 7 | **Scale out: Delta/Iceberg + Spark for the position layer** ← next |
-| 7.5 | Deliberately induce skew and fix it — where distributed intuition comes from |
+| 7 | Position layer: 207M rows shredded; **measured DuckDB, Spark not warranted yet** ✅ |
+| 7b | Spark + Delta — deferred until ~300k matches (~1 month of collection) |
+| 7.5 | Induce skew and fix it — waits on 7b; measured skew today is only 2.2x |
 
 ## Stack
 

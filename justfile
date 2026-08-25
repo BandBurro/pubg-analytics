@@ -121,3 +121,7 @@ infra-destroy:
 # Shred the position stream (separate, high-volume pass).
 shred-positions limit="0":
     uv run pubg shred-positions --limit {{limit}}
+
+# Spark + Delta learning exercise (DuckDB is the recommended path — see the script).
+spark-exercise:
+    uv run python scripts/spark_delta_exercise.py

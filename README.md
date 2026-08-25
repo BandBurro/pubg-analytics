@@ -656,6 +656,63 @@ path is read once at build time, but a view re-resolves it on **every query** �
 it worked from `dbt/` and failed from everywhere else. Now baked absolute via
 `PUBG_BRONZE`.
 
+## Spark and Delta: a labelled exercise that overturned my own prediction
+
+`scripts/spark_delta_exercise.py` runs local PySpark 4.2 with Delta Lake 4.4 on
+the same position data. It is explicitly **not** the recommended path — the
+benchmark above showed DuckDB is sufficient at this scale. It exists because the
+API and Delta semantics transfer everywhere, and because running both and
+reporting the numbers beats assuming.
+
+### The prediction was wrong
+
+I expected Spark to lose on one machine. It didn't:
+
+| engine | wall | steps computed |
+|---|---|---|
+| DuckDB | 25.32 s | 136,916,051 |
+| **Spark (local[*], 8 GB)** | **16.30 s** | 136,916,051 |
+
+**Spark was 1.6× faster**, and both engines returned an identical step count, so
+the comparison is real rather than two different questions. The query is a window
+partitioned by (match, player) — very high cardinality — and Spark's
+shuffle-and-sort across 64 partitions parallelises that better than I assumed.
+
+Two things that stops short of proving:
+
+- It is **one query shape**. DuckDB did the 270-million-pair range join in 2.85 s;
+  Spark was never measured on that, so no claim is made either way.
+- **Total cost isn't wall time.** Spark needed a 300 MB JDK, a JAR download, an
+  8 GB driver, a shuffle-partition decision, and ~15 s of session startup. DuckDB
+  needed `import duckdb`. At this scale that overhead dwarfs a 9-second win.
+
+The lesson isn't "Spark is faster" or "DuckDB is faster" — it's that engine choice
+is measurable, and the measurement disagreed with the person making the guess.
+
+### What Delta actually buys
+
+| Operation | Result |
+|---|---|
+| `WRITE` | 1,474,504 rows → v0 |
+| `DELETE` in-vehicle rows | 1,328,549 rows → v1 |
+| read `versionAsOf=0` | **1,474,504 rows — history survived the delete** |
+| `MERGE` 5,000 rows | 1,333,549 rows → v2 |
+| `OPTIMIZE` | **active files 22 → 1** → v3 |
+
+Time travel, ACID upserts, and compaction over object storage — the things plain
+Parquet cannot do, and the actual content of the word "lakehouse".
+
+### A measurement bug worth keeping
+
+The first version of the OPTIMIZE check counted `*.parquet` on disk and reported
+**24 → 25 files** — implying compaction made things *worse*. It hadn't: OPTIMIZE
+writes compacted files and **tombstones** the originals, which stay on disk until
+`VACUUM` runs. Reading `describe detail` for active files shows the real answer,
+22 → 1.
+
+Globbing a Delta directory measures the filesystem. The transaction log is the
+table. They disagree by design, and only one of them is the answer.
+
 ## Roadmap
 
 | Phase | What |
@@ -670,7 +727,7 @@ it worked from `dbt/` and failed from everywhere else. Now baked absolute via
 | 6 | Balance marts: engagement matrix, drop zones, zone luck ✅ |
 | 6.5 | Estimator study — found and fixed a real shrinkage bug ✅ |
 | 7 | Position layer: 207M rows, Silver + rotation mart, 3 confounds caught ✅ |
-| 7b | Spark + Delta — deferred until ~300k matches (~1 month of collection) |
+| 7b | Spark + Delta exercise: Spark 1.6x faster on the window query; Delta time travel / MERGE / OPTIMIZE ✅ |
 | 7.5 | Induce skew and fix it — waits on 7b; measured skew today is only 2.2x |
 
 ## Stack

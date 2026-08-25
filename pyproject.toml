@@ -49,4 +49,6 @@ asyncio_mode = "auto"
 [dependency-groups]
 dev = [
     "boto3>=1.43.77",
+    "delta-spark>=4.4.0",
+    "pyspark>=4.2.0",
 ]

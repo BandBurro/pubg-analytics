@@ -44,3 +44,6 @@ infra/terraform.tfvars
 infra/.terraform.lock.hcl
 infra/tfplan
 infra/*.tfplan
+
+# Delta tables from the Spark exercise
+data/delta/

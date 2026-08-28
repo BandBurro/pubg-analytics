@@ -118,3 +118,32 @@ def test_require_env_now_demands_the_players_table():
     assert "PLAYERS_TABLE" in str(exc.value)
     handler.PLAYERS_TABLE = "pl"
     handler.require_env()  # must not raise
+
+
+# --- the double-gzip bug: urllib does not decompress the way httpx does ---
+
+
+def test_decode_body_unwraps_gzip_by_header():
+    import gzip as gz
+
+    payload = b'[{"_T":"LogMatchStart"}]'
+    assert handler._decode_body(gz.compress(payload), "gzip") == payload
+
+
+def test_decode_body_unwraps_gzip_without_the_header():
+    """PUBG's CDN serves compressed telemetry without always advertising it."""
+    import gzip as gz
+
+    payload = b'[{"_T":"LogMatchStart"}]'
+    assert handler._decode_body(gz.compress(payload), None) == payload
+
+
+def test_decode_body_passes_plain_json_through():
+    payload = b'{"data":{"id":"abc"}}'
+    assert handler._decode_body(payload, None) == payload
+    assert handler._decode_body(payload, "identity") == payload
+
+
+def test_decode_body_survives_a_false_gzip_signature():
+    """Magic bytes that aren't really gzip must not raise mid-collection."""
+    assert handler._decode_body(b"\x1f\x8b not really gzip", None) == b"\x1f\x8b not really gzip"

@@ -171,6 +171,62 @@ def run(limit: int = typer.Option(200, help="Max matches to fetch this run.")) -
     asyncio.run(_both())
 
 
+@app.command(name="repair-gzip")
+def repair_gzip(
+    dry_run: bool = typer.Option(False, help="Report what would be repaired, change nothing."),
+) -> None:
+    """Un-double-compress raw files written by the buggy cloud collector.
+
+    PUBG's telemetry CDN serves gzip bytes regardless of Accept-Encoding. `httpx`
+    decompresses transparently, so the local collector's single gzip is correct;
+    `urllib` does not, so the Lambda compressed an already-compressed payload.
+    The result is `gzip(gzip(json))` — valid gzip, plausible size, unreadable.
+
+    The inner layer is already exactly what the file should contain, so the repair
+    is to write it back verbatim rather than re-compress. Idempotent: correct
+    files are recognised and left alone.
+
+    The Lambda no longer produces these, but S3 still holds the originals, so this
+    runs as part of `just sync-cloud` rather than as a one-off.
+    """
+    roots = [settings.raw_dir / "telemetry", settings.raw_dir / "matches"]
+    checked = repaired = failed = 0
+
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*.json.gz"):
+            checked += 1
+            try:
+                with gzip.open(path, "rb") as fh:
+                    head = fh.read(2)
+            except (OSError, EOFError):
+                failed += 1
+                continue
+            if head != b"\x1f\x8b":
+                continue  # already correct
+
+            if dry_run:
+                repaired += 1
+                continue
+            try:
+                with gzip.open(path, "rb") as fh:
+                    inner = fh.read()
+                tmp = path.with_suffix(".gz.tmp")
+                tmp.write_bytes(inner)
+                os.replace(tmp, path)
+                repaired += 1
+            except (OSError, EOFError):
+                failed += 1
+
+    verb = "would repair" if dry_run else "repaired"
+    typer.echo(f"checked {checked:,} files, {verb} {repaired:,}")
+    if failed:
+        typer.echo(f"{failed:,} unreadable")
+    if repaired and not dry_run:
+        typer.echo("run `just shred` next")
+
+
 @app.command()
 def adopt(
     dry_run: bool = typer.Option(False, help="Report what would be adopted, change nothing."),

@@ -112,6 +112,29 @@ def api_key() -> str:
     return _api_key
 
 
+def _decode_body(raw: bytes, encoding: str | None) -> bytes:
+    """Return plain bytes, decompressing if the response was gzipped.
+
+    `httpx` does this transparently; `urllib` does not. That difference caused a
+    real corruption: PUBG's telemetry CDN serves gzip bytes regardless of
+    Accept-Encoding, so the first version of this handler gzipped an
+    already-gzipped payload and wrote double-compressed files to S3. They looked
+    fine — correct size, valid gzip — and only failed weeks later at shred time.
+    Manifests were unaffected because that endpoint returns plain JSON, which is
+    why the fault surfaced in exactly one of the two writes.
+
+    The magic-byte check is the belt to the header's braces: some responses
+    arrive compressed without advertising it.
+    """
+    if encoding == "gzip" or raw[:2] == b"\x1f\x8b":
+        try:
+            return gzip.decompress(raw)
+        except (OSError, EOFError):
+            # Not actually gzip after all — hand back what we received.
+            return raw
+    return raw
+
+
 def _get(url: str, accept: str = JSONAPI, retries: int = 4) -> bytes:
     last: Exception | None = None
     for attempt in range(retries):
@@ -120,7 +143,7 @@ def _get(url: str, accept: str = JSONAPI, retries: int = 4) -> bytes:
         )
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
-                return resp.read()
+                return _decode_body(resp.read(), resp.headers.get("Content-Encoding"))
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise FileNotFoundError(url) from None

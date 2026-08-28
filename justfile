@@ -126,9 +126,17 @@ shred-positions limit="0":
 spark-exercise:
     uv run python scripts/spark_delta_exercise.py
 
+# The bucket name comes from OpenTofu state rather than being hardcoded: it embeds
+# the AWS account id, and an account id in a public repo is a free gift to anyone
+# enumerating targets. Override AWS_PROFILE / AWS_REGION if yours differ.
+#
 # Pull cloud-collected raw data down and fold it into the warehouse.
 sync-cloud:
-    aws s3 sync s3://pubg-analytics-raw-658430303879/raw/ data/raw/ --profile pubg-personal --region us-east-2
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bucket=$(cd infra && tofu output -raw raw_bucket)
+    aws s3 sync "s3://${bucket}/raw/" data/raw/ \
+      --profile "${AWS_PROFILE:-pubg-personal}" --region "${AWS_REGION:-us-east-2}"
     uv run pubg repair-gzip
     uv run pubg adopt
     uv run pubg shred

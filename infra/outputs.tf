@@ -8,6 +8,11 @@ output "ledger_table" {
   value       = aws_dynamodb_table.ledger.name
 }
 
+output "players_table" {
+  description = "DynamoDB table of accounts awaiting history expansion."
+  value       = aws_dynamodb_table.players.name
+}
+
 output "collector_function" {
   description = "Lambda function name; invoke it manually to test."
   value       = aws_lambda_function.collector.function_name

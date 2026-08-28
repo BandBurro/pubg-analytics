@@ -15,6 +15,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lambda"))
 
 import handler  # noqa: E402
 
+# These tests exercise module-level config, so without isolation one test's
+# mutation leaks into the next and failures depend on collection order.
+CONFIG_ATTRS = ("BUCKET", "TABLE", "API_KEY_PARAM", "PLAYERS_TABLE")
+
+
+@pytest.fixture(autouse=True)
+def restore_config():
+    saved = {a: getattr(handler, a) for a in CONFIG_ATTRS}
+    yield
+    for a, v in saved.items():
+        setattr(handler, a, v)
+
 
 def test_module_imports_without_aws_credentials():
     """Clients are built lazily, so importing must not touch AWS at all."""
@@ -26,10 +38,11 @@ def test_require_env_names_every_missing_variable():
     handler.BUCKET = ""
     handler.TABLE = ""
     handler.API_KEY_PARAM = ""
+    handler.PLAYERS_TABLE = ""
     with pytest.raises(RuntimeError) as exc:
         handler.require_env()
     msg = str(exc.value)
-    for name in ("BUCKET", "LEDGER_TABLE", "API_KEY_PARAM"):
+    for name in ("BUCKET", "LEDGER_TABLE", "API_KEY_PARAM", "PLAYERS_TABLE"):
         assert name in msg, msg
 
 
@@ -37,6 +50,7 @@ def test_require_env_passes_when_configured():
     handler.BUCKET = "b"
     handler.TABLE = "t"
     handler.API_KEY_PARAM = "p"
+    handler.PLAYERS_TABLE = "pl"
     handler.require_env()  # must not raise
 
 
@@ -64,3 +78,43 @@ def test_s3_key_layout_matches_the_local_collector():
     # Same partition scheme the local collector writes, so a single dbt source
     # can point at either.
     assert key.startswith("raw/telemetry/shard=")
+
+
+# --- cohort discovery: the half that keeps working after /samples goes stale ---
+
+
+def test_is_human_separates_accounts_from_bots():
+    assert handler.is_human("account.abc123")
+    assert not handler.is_human("ai.2840")
+    assert not handler.is_human(None)
+    assert not handler.is_human("")
+
+
+def test_participants_returns_only_human_accounts():
+    """Bots have no match history to walk, so seeding on them wastes API calls."""
+    match = {
+        "included": [
+            {"type": "participant", "attributes": {"stats": {"playerId": "account.aaa"}}},
+            {"type": "participant", "attributes": {"stats": {"playerId": "ai.9001"}}},
+            {"type": "participant", "attributes": {"stats": {"playerId": "account.bbb"}}},
+            {"type": "roster", "attributes": {"stats": {"playerId": "account.ccc"}}},
+            {"type": "asset", "attributes": {"URL": "https://cdn/x.json"}},
+        ]
+    }
+    assert handler.participants(match) == ["account.aaa", "account.bbb"]
+
+
+def test_participants_tolerates_missing_structure():
+    assert handler.participants({}) == []
+    assert handler.participants({"included": [{"type": "participant"}]}) == []
+    assert handler.participants({"included": [{"type": "participant", "attributes": {}}]}) == []
+
+
+def test_require_env_now_demands_the_players_table():
+    handler.BUCKET, handler.TABLE, handler.API_KEY_PARAM = "b", "t", "p"
+    handler.PLAYERS_TABLE = ""
+    with pytest.raises(RuntimeError) as exc:
+        handler.require_env()
+    assert "PLAYERS_TABLE" in str(exc.value)
+    handler.PLAYERS_TABLE = "pl"
+    handler.require_env()  # must not raise

@@ -713,12 +713,73 @@ writes compacted files and **tombstones** the originals, which stay on disk unti
 Globbing a Delta directory measures the filesystem. The transaction log is the
 table. They disagree by design, and only one of them is the answer.
 
+## The collector that ran perfectly and collected nothing
+
+An audit found the cloud collector had made **11 invocations with 0 errors** and
+was reporting, every single time:
+
+```
+{"discovered": 0, "attempted": 0, "queued": 0}
+```
+
+Healthy, scheduled, permissioned, and completely idle. `/samples` returns a pool
+that only refreshes periodically, so once the queue drained the collector spent
+every run rediscovering ids it already had. Nothing alarmed, because nothing was
+wrong — a function doing nothing looks identical to a function with nothing to do.
+
+This also corrected a projection given earlier: 800 matches × 12 runs/day ≈ 9,600
+per day assumed a full queue every run. Actual throughput was ~2,600/day and
+falling to zero.
+
+### The fix, and the fix's problem
+
+Ported player-history expansion into the Lambda — the same mechanism that took the
+local corpus from 3,556 to 31,875. Matches name their participants; a sample of
+those accounts goes into a `players` table; later runs call `/players` to pull each
+account's own match history. Matches yield players, players yield matches.
+
+It could not start itself. The players table fills from fetched matches, and
+matches only get fetched once something is queued — an empty table plus a stale
+`/samples` is a permanent standstill. `scripts/seed_cloud_cohort.py` bootstraps it
+from the 900k accounts the local warehouse already knows.
+
+The first run after seeding:
+
+```
+{"discovered": 1009, "players_expanded": 50, "cohort_discovered": 43291,
+ "attempted": 800, "queued": 800, "ok": 800}
+```
+
+**50 players yielded 43,291 matches — 43× what `/samples` found in the same run.**
+
+And that immediately created the opposite problem. Discovery runs at ~43k per
+invocation; fetching manages ~1,500. With 450 seeds still unexpanded the queue
+would have grown to hundreds of thousands of ids — every one of which **expires
+after 14 days**, converting discovery directly into `gone` rows rather than data.
+
+### Backpressure
+
+Discovery now pauses above a queue depth the fetcher can actually drain:
+
+```
+cohort paused: 24248+ already pending
+```
+
+`/samples` still runs every invocation (one cheap call), cohort expansion only when
+there is room, and `MAX_FETCH` went 800 → 1,500 after measuring that 800 used just
+354s of the 900s ceiling.
+
+The general lesson is not about PUBG: **a pipeline stage that is 50× cheaper than
+the stage below it will happily bury it.** Rate-matching is a design decision, and
+here the cost of getting it wrong is measured in expired data rather than a
+backlog.
+
 ## Roadmap
 
 | Phase | What |
 |---|---|
 | 1 | Collector ✅ — running on a 2h schedule |
-| 1.5 | Cloud collector: Lambda + S3 + DynamoDB as code ✅ (awaiting an AWS account to apply) |
+| 1.5 | Cloud collector live: Lambda + S3 + DynamoDB, cohort discovery, backpressure ✅ |
 | 2 | Bronze → typed Parquet: 8 tables, 1.53M rows ✅ |
 | 2.5 | Silver in dbt: 8 models, 35 tests, dedup + integrity flags ✅ |
 | 3 | Gold: 3 dims, 3 facts, 91 dbt nodes ✅ |

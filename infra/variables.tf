@@ -32,12 +32,12 @@ variable "collect_schedule" {
 
 variable "max_fetch_per_run" {
   description = <<-EOT
-    Matches attempted per invocation. The observed rate is roughly 2/second at
-    8-way concurrency, so 800 fits comfortably inside the 15-minute ceiling with
-    room to spare.
+    Matches attempted per invocation. Measured at ~2.3/second with 8-way
+    concurrency — 800 took 354s of the 900s ceiling — so 1500 uses the budget
+    without relying on the handler's deadline guard to cut it short.
   EOT
   type        = number
-  default     = 800
+  default     = 1500
 }
 
 variable "raw_retention_days" {
@@ -48,4 +48,24 @@ variable "raw_retention_days" {
   EOT
   type        = number
   default     = 90
+}
+
+variable "cohort_batches_per_run" {
+  description = <<-EOT
+    /players calls per invocation, 10 accounts each. Five expands 50 players and
+    leaves headroom under the 10 req/min cap for the /samples call alongside it.
+  EOT
+  type        = number
+  default     = 5
+}
+
+variable "cohort_pause_above" {
+  description = <<-EOT
+    Pause player-history discovery once this many matches are already queued.
+    One cohort batch finds ~8,600 matches while an invocation fetches ~1,500, and
+    PUBG deletes matches after 14 days — so an unbounded queue converts discovery
+    straight into expired rows rather than data.
+  EOT
+  type        = number
+  default     = 20000
 }

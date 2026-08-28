@@ -92,6 +92,41 @@ resource "aws_dynamodb_table" "ledger" {
   }
 }
 
+# Accounts harvested from fetched matches, and whether their history has been
+# walked yet. This is the half of discovery that keeps working after /samples
+# goes stale: matches name players, players name more matches.
+resource "aws_dynamodb_table" "players" {
+  name         = "${local.name}-players"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "account_id"
+
+  attribute {
+    name = "account_id"
+    type = "S"
+  }
+  attribute {
+    name = "expand_status"
+    type = "S"
+  }
+  attribute {
+    name = "first_seen"
+    type = "S"
+  }
+
+  # Same two-value-partition caveat as the match ledger: fine at this scale,
+  # would need a shard suffix in the millions.
+  global_secondary_index {
+    name            = "expand_index"
+    hash_key        = "expand_status"
+    range_key       = "first_seen"
+    projection_type = "KEYS_ONLY"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
 # ------------------------------------------------------------------ secret
 
 # SecureString in Parameter Store rather than Secrets Manager: standard

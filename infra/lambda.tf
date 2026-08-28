@@ -45,6 +45,8 @@ data "aws_iam_policy_document" "collector" {
     resources = [
       aws_dynamodb_table.ledger.arn,
       "${aws_dynamodb_table.ledger.arn}/index/*",
+      aws_dynamodb_table.players.arn,
+      "${aws_dynamodb_table.players.arn}/index/*",
     ]
   }
 
@@ -98,10 +100,16 @@ resource "aws_lambda_function" "collector" {
     variables = {
       BUCKET        = aws_s3_bucket.raw.id
       LEDGER_TABLE  = aws_dynamodb_table.ledger.name
+      PLAYERS_TABLE = aws_dynamodb_table.players.name
       API_KEY_PARAM = aws_ssm_parameter.api_key.name
       SHARD         = "steam"
       MAX_FETCH     = tostring(var.max_fetch_per_run)
       CONCURRENCY   = "8"
+      # /players is metered at 10 req/min and takes 10 accounts per call.
+      COHORT_BATCHES    = tostring(var.cohort_batches_per_run)
+      PLAYERS_PER_MATCH = "3"
+      # Pause discovery above this queue depth; see the handler for why.
+      COHORT_PAUSE_ABOVE = tostring(var.cohort_pause_above)
     }
   }
 

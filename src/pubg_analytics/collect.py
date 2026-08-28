@@ -172,6 +172,75 @@ def run(limit: int = typer.Option(200, help="Max matches to fetch this run.")) -
 
 
 @app.command()
+def adopt(
+    dry_run: bool = typer.Option(False, help="Report what would be adopted, change nothing."),
+) -> None:
+    """Register raw files on disk that the ledger doesn't know about.
+
+    The shredder works from the ledger, not the filesystem — it asks for matches
+    marked `done` and shreds their telemetry. That is the right design (the ledger
+    is the record of what was collected), but it means files that arrive by any
+    other route are invisible.
+
+    Which is exactly what happens after `aws s3 sync`: the cloud collector keeps
+    its own ledger in DynamoDB, so its matches exist on disk locally but not in
+    the local ledger. This reconciles the two by scanning for telemetry files with
+    no ledger row and adopting them.
+
+    Idempotent — files already known are skipped.
+    """
+    tele_root = settings.raw_dir / "telemetry"
+    if not tele_root.exists():
+        raise SystemExit(f"no telemetry directory at {tele_root}")
+
+    on_disk = {p.stem.removesuffix(".json"): p for p in tele_root.rglob("*.json.gz")}
+    typer.echo(f"telemetry files on disk: {len(on_disk):,}")
+
+    with Ledger(settings.ledger_path) as ledger:
+        known = {r[0] for r in ledger.conn.execute("select match_id from match").fetchall()}
+        orphans = {mid: path for mid, path in on_disk.items() if mid not in known}
+        typer.echo(f"already in the ledger  : {len(on_disk) - len(orphans):,}")
+        typer.echo(f"to adopt               : {len(orphans):,}")
+
+        if not orphans or dry_run:
+            if dry_run and orphans:
+                typer.echo("\n(dry run — nothing written)")
+            return
+
+        adopted = skipped = 0
+        for match_id, tele_path in orphans.items():
+            manifest_path = Path(str(tele_path).replace("/telemetry/", "/matches/"))
+            if not manifest_path.exists():
+                # Telemetry without its manifest can't be shredded: the match
+                # attributes and roster live in the manifest.
+                skipped += 1
+                continue
+            try:
+                from .shred import read_gz_json
+
+                attrs = read_gz_json(manifest_path)["data"]["attributes"]
+            except (OSError, orjson.JSONDecodeError, KeyError):
+                skipped += 1
+                continue
+
+            ledger.add_discovered([match_id])
+            ledger.mark_done(
+                match_id,
+                telemetry_path=str(tele_path),
+                event_count=-1,  # unknown without parsing; the shredder recounts
+                match_created_at=attrs.get("createdAt"),
+                map_name=attrs.get("mapName"),
+                game_mode=attrs.get("gameMode"),
+            )
+            adopted += 1
+
+    typer.echo(
+        f"\nadopted {adopted:,}" + (f", skipped {skipped:,} (no manifest)" if skipped else "")
+    )
+    typer.echo("run `just shred` next")
+
+
+@app.command()
 def shred(
     limit: int = typer.Option(0, help="Max matches to shred; 0 means everything pending."),
     batch: int = typer.Option(250, help="Matches per Parquet part file."),

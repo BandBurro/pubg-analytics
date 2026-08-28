@@ -125,3 +125,13 @@ shred-positions limit="0":
 # Spark + Delta learning exercise (DuckDB is the recommended path — see the script).
 spark-exercise:
     uv run python scripts/spark_delta_exercise.py
+
+# Pull cloud-collected raw data down and fold it into the warehouse.
+sync-cloud:
+    aws s3 sync s3://pubg-analytics-raw-658430303879/raw/ data/raw/ --profile pubg-personal --region us-east-2
+    uv run pubg adopt
+    uv run pubg shred
+
+# Register raw files the ledger does not know about (e.g. after an s3 sync).
+adopt:
+    uv run pubg adopt

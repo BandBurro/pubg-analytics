@@ -50,8 +50,23 @@ tar czf /tmp/backfill-code.tar.gz src scripts/cloud_shred.py pyproject.toml
 aws s3 cp /tmp/backfill-code.tar.gz "s3://${BUCKET}/backfill/code.tar.gz" --quiet
 echo "code uploaded"
 
+# Re-running this script is expected: AWS refuses launches during first-time
+# regional verification, so some shards land and others do not. Skipping shards
+# that are already up makes the retry safe — otherwise a second run doubles the
+# instance count and pays twice for work the running shard is already doing.
+# (It would not corrupt anything: batches are deterministic and markers make
+# the output idempotent. It would just cost twice as much.)
+RUNNING=$(aws ec2 describe-instances \
+  --filters Name=tag:Project,Values=pubg-analytics \
+  Name=instance-state-name,Values=pending,running \
+  --query 'Reservations[].Instances[].Tags[?Key==`Name`].Value' --output text)
+
 IDS=()
 for SHARD in $(seq 0 $((SHARDS - 1))); do
+  if grep -qw "pubg-analytics-backfill-${SHARD}" <<<"$RUNNING"; then
+    echo "  shard ${SHARD}/${SHARDS} -> already running, skipping"
+    continue
+  fi
   USER_DATA=$(cat <<EOF
 #!/bin/bash
 set -xeuo pipefail

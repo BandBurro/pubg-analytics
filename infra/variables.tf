@@ -30,6 +30,19 @@ variable "collect_schedule" {
   default     = "rate(2 hours)"
 }
 
+variable "collect_enabled" {
+  description = <<-EOT
+    Whether the collector schedule actually fires.
+
+    Defaults to false. Collection ran ahead of what the pipeline could shred for
+    six weeks, reaching ~1 TB of raw telemetry and roughly $20/month against a
+    free-tier credit balance. It should only be switched back on once the raw
+    corpus is being reduced to Parquet at the rate it is produced.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "max_fetch_per_run" {
   description = <<-EOT
     Matches attempted per invocation. Measured at ~2.3/second with 8-way

@@ -125,6 +125,21 @@ resource "aws_cloudwatch_event_rule" "collect" {
   name                = "${local.name}-collect"
   description         = "Run the PUBG collector on a schedule."
   schedule_expression = var.collect_schedule
+
+  # Declared rather than left to the console. The rule was first paused with
+  # `aws events disable-rule` when the corpus outgrew what the pipeline could
+  # consume; because the state was not expressed here, the very next `tofu
+  # apply` would have read the pause as drift and silently resumed collection.
+  state = var.collect_enabled ? "ENABLED" : "DISABLED"
+}
+
+# Asynchronous invocations retry twice by default, so one out-of-memory run
+# costs three times the GB-seconds and does the same work three times. Nothing
+# is gained: the collector is idempotent and the schedule comes round again in
+# two hours, so a failed run is already retried by design.
+resource "aws_lambda_function_event_invoke_config" "collector" {
+  function_name          = aws_lambda_function.collector.function_name
+  maximum_retry_attempts = 0
 }
 
 resource "aws_cloudwatch_event_target" "collect" {

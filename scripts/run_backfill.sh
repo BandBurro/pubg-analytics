@@ -32,6 +32,11 @@ SHARDS="${SHARDS:-4}"
 WORKERS="${WORKERS:-2}"
 BATCH="${BATCH:-200}"
 
+# The job's own clean stop, and the hard kill that does not trust it. A shard
+# once ran nine idle days because neither existed.
+MAX_RUNTIME="${MAX_RUNTIME:-20}"
+KILL_AFTER="${KILL_AFTER:-22}"
+
 BUCKET=$(cd infra && tofu output -raw raw_bucket)
 PROFILE_NAME=$(cd infra && tofu output -raw backfill_instance_profile)
 AMI=$(aws ssm get-parameter \
@@ -84,9 +89,17 @@ tar xzf code.tar.gz
 
 export AWS_REGION="${AWS_REGION}"
 set +e
-/opt/venv/bin/python scripts/cloud_shred.py \\
+# Two independent guarantees that this instance stops billing.
+#
+# The inner one is --max-runtime, which ends the Python cleanly and lets it
+# write its log. The outer \`timeout\` exists because the inner one is code, and
+# code is what failed last time: a shard sat at 0.2% CPU for nine days and
+# ~\$20 because its only exit path was "the work finished". SIGKILL does not
+# depend on the program being well.
+timeout -s KILL ${KILL_AFTER}h \\
+  /opt/venv/bin/python scripts/cloud_shred.py \\
   --bucket "${BUCKET}" --workers ${WORKERS} --batch ${BATCH} \\
-  --shard ${SHARD} --shards ${SHARDS}
+  --shard ${SHARD} --shards ${SHARDS} --max-runtime ${MAX_RUNTIME}
 RC=\$?
 set -e
 

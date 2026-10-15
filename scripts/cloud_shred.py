@@ -70,13 +70,28 @@ DOWNLOAD_THREADS = 16
 
 
 def s3_client():
+    """An S3 client that fails rather than waits.
+
+    `mode="adaptive"` was used here originally and one shard went to 0.2% CPU
+    for nine days without finishing or exiting, costing ~$20. Adaptive retries
+    add a client-side rate limiter that clamps throughput hard after throttling
+    and recovers slowly, which matches that signature; the instance's logs were
+    destroyed with it, so this is the leading explanation rather than a proven
+    one. `standard` has no such limiter and still retries throttling.
+
+    Timeouts are set explicitly and well below botocore's 60s default for the
+    same reason: in a job of half a million small objects, a request worth
+    waiting a full minute for does not exist.
+    """
     import boto3
     from botocore.config import Config
 
     return boto3.client(
         "s3",
         config=Config(
-            retries={"max_attempts": 10, "mode": "adaptive"},
+            retries={"max_attempts": 10, "mode": "standard"},
+            connect_timeout=10,
+            read_timeout=30,
             max_pool_connections=DOWNLOAD_THREADS * 2,
         ),
     )
@@ -278,6 +293,12 @@ def main() -> int:
     # and the total cost is unchanged — only the wall clock divides.
     ap.add_argument("--shard", type=int, default=0, help="This worker's index.")
     ap.add_argument("--shards", type=int, default=1, help="Total workers.")
+    ap.add_argument(
+        "--max-runtime",
+        type=float,
+        default=20.0,
+        help="Hours before stopping cleanly, so a stall cannot bill forever.",
+    )
     args = ap.parse_args()
 
     if not 0 <= args.shard < args.shards:
@@ -316,9 +337,36 @@ def main() -> int:
         return 0
 
     started = time.time()
-    matches = pos = skipped = 0
+    deadline = started + args.max_runtime * 3600
+    matches = pos = skipped = n = 0
+    stopped_early = False
+
+    # A plain `for r in pool.imap_unordered(...)` has no way out if a worker
+    # stops making progress: it blocks forever, the process never exits, and an
+    # instance whose only exit path is "the job finished" bills until someone
+    # notices. One shard did exactly that for nine days. Waiting with a deadline
+    # converts a silent hang into a clean, resumable stop — the markers mean the
+    # abandoned batches are simply picked up by the next run.
     with mp.Pool(args.workers) as pool:
-        for n, r in enumerate(pool.imap_unordered(process_batch, todo), 1):
+        it = pool.imap_unordered(process_batch, todo)
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                print(
+                    f"deadline of {args.max_runtime}h reached at {n}/{len(todo)} "
+                    f"batches — stopping cleanly, rerun to finish",
+                    flush=True,
+                )
+                stopped_early = True
+                pool.terminate()
+                break
+            try:
+                r = it.next(timeout=remaining)
+            except StopIteration:
+                break
+            except mp.TimeoutError:
+                continue
+            n += 1
             matches += r["matches"]
             pos += r["position_rows"]
             skipped += r["skipped"]
@@ -334,9 +382,13 @@ def main() -> int:
     elapsed = time.time() - started
     print(
         f"\ndone: {matches:,} matches, {pos:,} position rows, {skipped:,} skipped, "
-        f"in {elapsed / 3600:.2f}h ({matches / elapsed:.1f}/s)"
+        f"in {elapsed / 3600:.2f}h ({matches / max(elapsed, 1):.1f}/s)"
     )
-    return 0
+    # Non-zero when work was abandoned, so the shard log's rc suffix tells the
+    # truth about whether this shard finished its range. Shards 0-2 wrote rc0
+    # and shard 3 wrote nothing at all, which is how the stall was found — but
+    # only after nine days, because "no log" was not a signal anyone watched.
+    return 3 if stopped_early else 0
 
 
 if __name__ == "__main__":
